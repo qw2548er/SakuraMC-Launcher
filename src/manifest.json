@@ -44,7 +44,7 @@
     "title": "樱花 MC 启动器",
     "router": {
       "mode": "hash",
-      "base": "/"
+      "base": "./"
     },
     "devServer": {
       "https": false,

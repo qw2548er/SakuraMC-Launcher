@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>樱花 MC 启动器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 50%, #0f0f1a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: #ffb7d5;
+            overflow: hidden;
+        }
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .logo {
+            width: 100px;
+            height: 100px;
+            border-radius: 24px;
+            background: linear-gradient(135deg, #ffb7d5 0%, #d896ff 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 50px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .text {
+            font-size: 18px;
+            text-align: center;
+        }
+        .status {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        .error-info {
+            max-width: 80%;
+            font-size: 13px;
+            color: #ff8a8a;
+            text-align: center;
+            display: none;
+            margin-top: 10px;
+            line-height: 1.6;
+        }
+        .retry-btn {
+            padding: 10px 30px;
+            background: rgba(216, 150, 255, 0.2);
+            border: 1px solid #d896ff;
+            border-radius: 12px;
+            color: #ffb7d5;
+            cursor: pointer;
+            font-size: 14px;
+            display: none;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <div class="logo">🌸</div>
+        <div class="text">樱花 MC 启动器</div>
+        <div class="status" id="status">正在启动本地服务...</div>
+        <div class="error-info" id="errorInfo"></div>
+        <button class="retry-btn" id="retryBtn" onclick="retry()">重试</button>
+    </div>
+
+    <script>
+        var retryCount = 0;
+        var maxRetries = 3;
+        var currentPort = 8787;
+
+        function startServer() {
+            document.getElementById('status').textContent = '正在启动本地服务...';
+            
+            if (!window.cordova) {
+                setTimeout(startServer, 100);
+                return;
+            }
+
+            var wwwPath = cordova.file.applicationDirectory + 'www';
+            
+            window.LocalHttpd.startServer(
+                currentPort,
+                '',
+                function(url) {
+                    document.getElementById('status').textContent = '服务启动成功，加载应用...';
+                    setTimeout(function() {
+                        window.location.href = url;
+                    }, 300);
+                },
+                function(error) {
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        currentPort++;
+                        document.getElementById('status').textContent = '端口被占用，尝试端口 ' + currentPort + '...';
+                        setTimeout(startServer, 500);
+                    } else {
+                        document.getElementById('status').textContent = '服务启动失败';
+                        document.getElementById('errorInfo').style.display = 'block';
+                        document.getElementById('errorInfo').textContent = '错误: ' + error;
+                        document.getElementById('retryBtn').style.display = 'block';
+                    }
+                }
+            );
+        }
+
+        function retry() {
+            retryCount = 0;
+            currentPort = 8787;
+            document.getElementById('errorInfo').style.display = 'none';
+            document.getElementById('retryBtn').style.display = 'none';
+            startServer();
+        }
+
+        document.addEventListener('deviceready', startServer, false);
+    </script>
+</body>
+</html>

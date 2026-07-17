@@ -104,8 +104,15 @@ jobs:
           mkdir -p build/mobile/www
           unzip -o SakuraMC-Launcher-*-H5.zip -d build/mobile/www
 
+      - name: 复制启动页
+        run: cp build/mobile/launcher.html build/mobile/www/launcher.html
+
       - name: 安装 Cordova
         run: npm install -g cordova
+
+      - name: 安装本地HTTP服务器插件
+        working-directory: build/mobile
+        run: cordova plugin add ./cordova-plugin-local-httpd --no-interactive
 
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v3
@@ -173,6 +180,13 @@ jobs:
             | 🪟 Windows 便携版 | `SakuraMC-Launcher-*-x64-portable.exe` | 免安装, 直接运行 |
             | 📱 Android | `SakuraMC-Launcher-*-android.apk` | Android 5.0+ |
             | 🌐 H5 网页版 | `SakuraMC-Launcher-*-H5.zip` | 浏览器直接用 |
+
+            ### ✨ 本版本更新
+
+            - 🔥 **内置本地HTTP服务器** - 彻底解决 file:// 协议加载问题, 启动更稳定
+            - 📱 **手机端优化** - 启动时自动起服务, 无需担心网络问题
+            - 🖥️ **桌面端优化** - Electron 内置本地服务器, 体验更流畅
+            - 🐛 **修复启动失败问题** - 解决部分设备上"启动失败,请刷新页面或检查网络"的错误
 
             ### ✨ 主要功能
 

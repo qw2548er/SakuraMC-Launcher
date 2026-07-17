@@ -1,6 +1,6 @@
 {
   "name": "sakura-mc-launcher-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "樱花MC启动器 - 桌面版 (Electron)",
   "main": "main.js",
   "author": "SakuraMC",
