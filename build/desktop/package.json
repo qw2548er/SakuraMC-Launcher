@@ -5,12 +5,16 @@
   "main": "main.js",
   "author": "SakuraMC",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qw2548er/SakuraMC-Launcher.git"
+  },
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win --x64",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "devDependencies": {
     "electron": "^28.0.0",
@@ -38,8 +42,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "build/icon.ico",
-      "artifactName": "樱花MC启动器-${version}-setup.${ext}"
+      "artifactName": "樱花MC启动器-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -49,12 +52,10 @@
       "shortcutName": "樱花MC启动器"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "build/icon.icns"
+      "target": "dmg"
     },
     "linux": {
       "target": ["AppImage", "deb"],
-      "icon": "build",
       "category": "Game"
     }
   }

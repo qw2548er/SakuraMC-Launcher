@@ -1,4 +1,4 @@
-name: 构建发布 v0.1.0
+name: 构建发布
 
 on:
   push:
@@ -12,24 +12,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-      
+
       - name: 安装依赖
         run: npm install --legacy-peer-deps
-      
+
       - name: 构建 H5
         run: npm run build:h5
-      
+
+      - name: 打包 H5
+        run: |
+          cd dist/build/h5
+          VERSION=${GITHUB_REF_NAME#v}
+          zip -r "../../樱花MC启动器-${VERSION}-H5网页版.zip" .
+          ls -lh ../../
+
       - name: 上传 H5 构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: h5-dist
-          path: dist/build/h5
+          name: h5-zip
+          path: dist/樱花MC启动器-*.zip
 
   build-desktop:
     name: 构建桌面版 (Windows)
@@ -37,28 +44,32 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
+
       - name: 下载 H5 构建产物
         uses: actions/download-artifact@v4
         with:
-          name: h5-dist
-          path: build/desktop/web
-      
+          name: h5-zip
+
+      - name: 解压 H5 到 web 目录
+        run: |
+          mkdir -p build/desktop/web
+          Expand-Archive -Path "樱花MC启动器-*-H5网页版.zip" -DestinationPath "build/desktop/web" -Force
+
       - name: 安装 Electron 依赖
         working-directory: build/desktop
         run: npm install
-      
+
       - name: 构建 Windows 版
         working-directory: build/desktop
         run: npm run dist:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: 上传桌面版产物
         uses: actions/upload-artifact@v4
         with:
@@ -71,41 +82,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
+
       - name: 设置 JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-      
+
       - name: 下载 H5 构建产物
         uses: actions/download-artifact@v4
         with:
-          name: h5-dist
-          path: build/mobile/www
-      
+          name: h5-zip
+
+      - name: 解压 H5 到 www 目录
+        run: |
+          mkdir -p build/mobile/www
+          unzip -o 樱花MC启动器-*-H5网页版.zip -d build/mobile/www
+
       - name: 安装 Cordova
         run: npm install -g cordova
-      
+
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v3
-      
+
       - name: 构建 APK
         working-directory: build/mobile
         run: |
           cordova platform add android --no-interactive
           cordova build android --debug
-      
+
+      - name: 重命名 APK
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cp build/mobile/platforms/android/app/build/outputs/apk/debug/app-debug.apk "樱花MC启动器-${VERSION}-android.apk"
+          ls -lh 樱花MC启动器-*.apk
+
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: build/mobile/platforms/android/app/build/outputs/apk/debug/*.apk
+          path: 樱花MC启动器-*.apk
 
   release:
     name: 创建 GitHub Release
@@ -114,57 +135,47 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      
       - name: 下载桌面版
         uses: actions/download-artifact@v4
         with:
           name: desktop-windows
-          path: release/desktop
-      
+          path: release
+
       - name: 下载 APK
         uses: actions/download-artifact@v4
         with:
           name: android-apk
-          path: release/android
-      
+          path: release
+
       - name: 下载 H5
         uses: actions/download-artifact@v4
         with:
-          name: h5-dist
-          path: release/h5
-      
-      - name: 打包 H5
-        run: |
-          cd release
-          zip -r 樱花MC启动器-0.1.0-H5网页版.zip h5/
-          mv 樱花MC启动器-0.1.0-H5网页版.zip release/
-      
-      - name: 重命名文件
-        run: |
-          cd release
-          mv android/*.apk 樱花MC启动器-0.1.0-android.apk
-      
+          name: h5-zip
+          path: release
+
+      - name: 列文件
+        run: ls -lh release/
+
       - name: 创建 Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          name: v0.1.0 - 樱花 MC 启动器
+          name: ${{ github.ref_name }} - 樱花 MC 启动器
           body: |
-            ## 🌸 樱花 MC 启动器 v0.1.0
-            
+            ## 🌸 樱花 MC 启动器 ${{ github.ref_name }}
+
             跨平台 Minecraft Java 版启动器 + 完整樱花穿透控制台
-            
-            ### 下载
-            
-            | 平台 | 文件 |
-            |------|------|
-            | 🪟 Windows 安装版 | `樱花MC启动器-0.1.0-setup.exe` |
-            | 🪟 Windows 便携版 | `樱花MC启动器-0.1.0.exe` |
-            | 📱 Android | `樱花MC启动器-0.1.0-android.apk` |
-            | 🌐 H5 网页版 | `樱花MC启动器-0.1.0-H5网页版.zip` |
-            
-            ### 主要功能
-            
+
+            ### 📦 下载
+
+            | 平台 | 文件 | 说明 |
+            |------|------|------|
+            | 🪟 Windows 安装版 | `樱花MC启动器-*-setup.exe | 需安装 |
+            | 🪟 Windows 便携版 | `樱花MC启动器-*.exe` | 免安装, 直接运行 |
+            | 📱 Android | `樱花MC启动器-*-android.apk` | Android 5.0+ |
+            | 🌐 H5 网页版 | `樱花MC启动器-*-H5网页版.zip` | 浏览器直接用 |
+
+            ### ✨ 主要功能
+
             - ✅ 微软账号 / 离线账号 登录管理
             - ✅ 游戏版本管理 (Vanilla / Forge / Fabric / Quilt)
             - ✅ 服务器管理 + SLP 在线状态查询
@@ -173,17 +184,14 @@ jobs:
             - ✅ frpc 配置文件生成
             - ✅ 启动参数自定义
             - ✅ 玻璃态 UI + 樱花粉紫主题
-            
-            ### 注意事项
-            
-            - 手机版无法直接启动 Minecraft Java 版 (需要在电脑上运行)
-            - 首次启动需要下载游戏核心文件
-            - 樱花穿透功能需要注册 natfrp.com 账号
+
+            ### 📱 手机版说明
+
+            手机端可以管理樱花穿透隧道、查看服务器状态、生成启动命令，但无法直接启动 Minecraft Java 版游戏（需要 PC 端）。
+
+            ### 💡 所有版本由 GitHub Actions 自动构建
           files: |
-            release/*.exe
-            release/*.apk
-            release/*.zip
-          draft: false
-          prerelease: false
+            release/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
