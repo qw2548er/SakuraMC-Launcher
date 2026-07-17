@@ -42,9 +42,10 @@
           "arch": ["x64"]
         }
       ],
-      "artifactName": "樱花MC启动器-${version}-${arch}.${ext}"
+      "artifactName": "SakuraMC-Launcher-${version}-${arch}-portable.${ext}"
     },
     "nsis": {
+      "artifactName": "SakuraMC-Launcher-${version}-setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

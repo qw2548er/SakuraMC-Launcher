@@ -29,14 +29,14 @@ jobs:
         run: |
           cd dist/build/h5
           VERSION=${GITHUB_REF_NAME#v}
-          zip -r "../../樱花MC启动器-${VERSION}-H5网页版.zip" .
+          zip -r "../../SakuraMC-Launcher-${VERSION}-H5.zip" .
           ls -lh ../../
 
       - name: 上传 H5 构建产物
         uses: actions/upload-artifact@v4
         with:
           name: h5-zip
-          path: dist/樱花MC启动器-*.zip
+          path: dist/SakuraMC-Launcher-*.zip
 
   build-desktop:
     name: 构建桌面版 (Windows)
@@ -58,7 +58,7 @@ jobs:
       - name: 解压 H5 到 web 目录
         run: |
           mkdir -p build/desktop/web
-          Expand-Archive -Path "樱花MC启动器-*-H5网页版.zip" -DestinationPath "build/desktop/web" -Force
+          Expand-Archive -Path "SakuraMC-Launcher-*-H5.zip" -DestinationPath "build/desktop/web" -Force
 
       - name: 安装 Electron 依赖
         working-directory: build/desktop
@@ -102,7 +102,7 @@ jobs:
       - name: 解压 H5 到 www 目录
         run: |
           mkdir -p build/mobile/www
-          unzip -o 樱花MC启动器-*-H5网页版.zip -d build/mobile/www
+          unzip -o SakuraMC-Launcher-*-H5.zip -d build/mobile/www
 
       - name: 安装 Cordova
         run: npm install -g cordova
@@ -119,14 +119,14 @@ jobs:
       - name: 重命名 APK
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          cp build/mobile/platforms/android/app/build/outputs/apk/debug/app-debug.apk "樱花MC启动器-${VERSION}-android.apk"
-          ls -lh 樱花MC启动器-*.apk
+          cp build/mobile/platforms/android/app/build/outputs/apk/debug/app-debug.apk "SakuraMC-Launcher-${VERSION}-android.apk"
+          ls -lh SakuraMC-Launcher-*.apk
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: 樱花MC启动器-*.apk
+          path: SakuraMC-Launcher-*.apk
 
   release:
     name: 创建 GitHub Release
@@ -169,10 +169,10 @@ jobs:
 
             | 平台 | 文件 | 说明 |
             |------|------|------|
-            | 🪟 Windows 安装版 | `樱花MC启动器-*-setup.exe | 需安装 |
-            | 🪟 Windows 便携版 | `樱花MC启动器-*.exe` | 免安装, 直接运行 |
-            | 📱 Android | `樱花MC启动器-*-android.apk` | Android 5.0+ |
-            | 🌐 H5 网页版 | `樱花MC启动器-*-H5网页版.zip` | 浏览器直接用 |
+            | 🪟 Windows 安装版 | `SakuraMC-Launcher-*-setup.exe` | 需安装 |
+            | 🪟 Windows 便携版 | `SakuraMC-Launcher-*-x64-portable.exe` | 免安装, 直接运行 |
+            | 📱 Android | `SakuraMC-Launcher-*-android.apk` | Android 5.0+ |
+            | 🌐 H5 网页版 | `SakuraMC-Launcher-*-H5.zip` | 浏览器直接用 |
 
             ### ✨ 主要功能
 
