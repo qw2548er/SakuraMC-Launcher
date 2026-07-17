@@ -7,6 +7,7 @@ import McButton from '@/components/mc-button.vue'
 import McInput from '@/components/mc-input.vue'
 import McModal from '@/components/mc-modal.vue'
 import GameIcon from '@/components/game-icon.vue'
+import NotDeveloped from '@/components/not-developed.vue'
 import { isValidMCUsername, relativeTime } from '@/utils/format'
 
 const accountStore = useAccountStore()
@@ -65,6 +66,7 @@ const sortedAccounts = computed(() => {
 
 <template>
   <view class="accounts">
+    <NotDeveloped variant="banner" feature="微软账号 OAuth 登录" plan="v0.2.0" />
     <view class="accounts__hero">
       <text class="accounts__title">账号管理</text>
       <text class="accounts__subtitle">支持微软账号、离线账号, 共 {{ accountStore.accounts.length }} 个</text>

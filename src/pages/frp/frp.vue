@@ -9,6 +9,7 @@ import McModal from '@/components/mc-modal.vue'
 import McInput from '@/components/mc-input.vue'
 import McPicker from '@/components/mc-picker.vue'
 import McSwitch from '@/components/mc-switch.vue'
+import NotDeveloped from '@/components/not-developed.vue'
 import { formatBytes, copyText, relativeTime } from '@/utils/format'
 import { TUNNEL_PRESETS, getFrpcBinaryUrl } from '@/utils/frpc'
 
@@ -211,6 +212,7 @@ const trafficPercent = computed(() => {
 
 <template>
   <view class="frp">
+    <NotDeveloped variant="banner" feature="frpc 进程启动" plan="v0.2.0" />
     <view class="frp__header">
       <view>
         <text class="frp__title">樱花穿透</text>

@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import McCard from '@/components/mc-card.vue'
 import McButton from '@/components/mc-button.vue'
 import McBadge from '@/components/mc-badge.vue'
+import NotDeveloped from '@/components/not-developed.vue'
 import { formatBytes, formatTime } from '@/utils/format'
 
 const versionStore = useVersionStore()
@@ -50,6 +51,7 @@ function clearDownloads() {
 
 <template>
   <view class="versions">
+    <NotDeveloped variant="banner" feature="游戏版本下载与安装" plan="v0.3.0" />
     <view class="versions__header">
       <view>
         <text class="versions__title">版本管理</text>

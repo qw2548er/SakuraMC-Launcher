@@ -9,6 +9,7 @@ import McBadge from '@/components/mc-badge.vue'
 import McModal from '@/components/mc-modal.vue'
 import McInput from '@/components/mc-input.vue'
 import McPicker from '@/components/mc-picker.vue'
+import NotDeveloped from '@/components/not-developed.vue'
 
 const serverStore = useServerStore()
 const frpStore = useFrpStore()
@@ -115,6 +116,7 @@ const frpOptions = computed(() => [
 
 <template>
   <view class="servers">
+    <NotDeveloped variant="banner" feature="本地服务器启动" plan="v0.2.0" />
     <view class="servers__header">
       <view>
         <text class="servers__title">服务器</text>

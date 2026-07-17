@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useVersionStore } from '@/stores/version'
 import McCard from '@/components/mc-card.vue'
+import NotDeveloped from '@/components/not-developed.vue'
 
 const versionStore = useVersionStore()
 
@@ -12,6 +13,7 @@ function openVersion(id: string) {
 
 <template>
   <view class="mods">
+    <NotDeveloped variant="banner" feature="Mod 下载与管理" plan="v0.4.0" />
     <view class="mods__header">
       <text class="mods__title">Mod 管理</text>
       <text class="mods__subtitle">Forge / Fabric / Quilt / OptiFine 统一管理</text>

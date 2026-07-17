@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
+    <script>if (typeof globalThis === 'undefined') {
+  window.globalThis = window
+}</script>
+
+    <script type="module" src="/@vite/client"></script>
+
     <meta charset="UTF-8" />
     <script>
       var coverSupport = 'CSS' in window && typeof CSS.supports === 'function' && (CSS.supports('top: constant(a)') || CSS.supports('top: env(a)'))
@@ -12,8 +18,10 @@
     <style>
       html, body, #app { height: 100%; margin: 0; padding: 0; background: #0f0f1a; }
       body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-tap-highlight-color: transparent; }
-      #__app_loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 50%, #0f0f1a 100%); color: #ffb7d5; font-size: 16px; gap: 16px; }
+      #__app_loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 50%, #0f0f1a 100%); color: #ffb7d5; font-size: 16px; gap: 16px; z-index: 9999; }
       #__app_loading .logo { width: 80px; height: 80px; border-radius: 20px; background: linear-gradient(135deg, #ffb7d5 0%, #d896ff 100%); display: flex; align-items: center; justify-content: center; font-size: 40px; animation: pulse 1.5s ease-in-out infinite; }
+      #__app_loading .error { display: none; max-width: 80%; text-align: center; color: #ffb7d5; font-size: 14px; line-height: 1.6; }
+      #__app_loading .error .err-btn { margin-top: 16px; padding: 8px 24px; background: rgba(216, 150, 255, 0.2); border: 1px solid #d896ff; border-radius: 12px; color: #ffb7d5; cursor: pointer; }
       @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.1); opacity: 1; } }
     </style>
   </head>
@@ -22,8 +30,31 @@
       <div id="__app_loading">
         <div class="logo">🌸</div>
         <div>樱花 MC 启动器加载中…</div>
+        <div class="error" id="__app_error">
+          <div id="__app_error_msg">启动失败, 请刷新页面或检查网络</div>
+          <button class="err-btn" onclick="location.reload()">🔄 重新加载</button>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // 超时保护: 15 秒还没加载成功就显示错误
+      setTimeout(function() {
+        var el = document.getElementById('__app_loading');
+        if (!el) return;
+        // 检查 app 是否真的渲染了内容
+        var appDiv = document.getElementById('app');
+        if (appDiv && appDiv.children.length === 1 && appDiv.querySelector('#__app_loading')) {
+          // 还在加载
+          document.querySelector('#__app_loading > div:nth-child(2)').style.display = 'none';
+          document.getElementById('__app_error').style.display = 'block';
+        }
+      }, 15000);
+
+      // 监听未捕获错误
+      window.addEventListener('error', function(e) {
+        console.error('App error:', e.error || e.message);
+      });
+    </script>
   </body>
 </html>

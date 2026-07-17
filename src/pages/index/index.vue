@@ -10,6 +10,7 @@ import McButton from '@/components/mc-button.vue'
 import McCard from '@/components/mc-card.vue'
 import McBadge from '@/components/mc-badge.vue'
 import GameIcon from '@/components/game-icon.vue'
+import NotDeveloped from '@/components/not-developed.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
 
@@ -185,6 +186,7 @@ onMounted(() => {
           <text class="launch-row__chevron">›</text>
         </view>
 
+        <NotDeveloped variant="banner" feature="游戏启动" plan="v0.2.0" />
         <view class="home__cta">
           <McButton size="lg" glow block @click="startGame">▶ 启动游戏</McButton>
           <text class="home__cta-tip">H5 端将生成启动命令 / 脚本, PC 端下载后双击运行</text>
