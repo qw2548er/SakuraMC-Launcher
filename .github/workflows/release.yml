@@ -113,7 +113,7 @@ jobs:
       - name: 构建 APK
         working-directory: build/mobile
         run: |
-          cordova platform add android --no-interactive
+          cordova platform add android@13 --no-interactive
           cordova build android --debug
 
       - name: 重命名 APK
