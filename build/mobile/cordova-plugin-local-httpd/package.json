@@ -1,0 +1,21 @@
+{
+  "name": "cordova-plugin-local-httpd",
+  "version": "1.0.0",
+  "description": "Cordova Local HTTP Server Plugin - 内置本地HTTP服务器",
+  "main": "www/local-httpd.js",
+  "scripts": {},
+  "keywords": [
+    "cordova",
+    "httpd",
+    "server",
+    "local"
+  ],
+  "author": "SakuraMC",
+  "license": "MIT",
+  "cordova": {
+    "id": "cordova-plugin-local-httpd",
+    "platforms": [
+      "android"
+    ]
+  }
+}
