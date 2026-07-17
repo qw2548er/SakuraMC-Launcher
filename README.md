@@ -3,7 +3,19 @@
 > 一个跨平台 Minecraft Java 版启动器 + 完整樱花穿透 (Sakura Frp) 控制台
 > 基于 Uniapp Vue3 + TypeScript + Pinia 构建, 一份代码同时支持 H5 浏览器与 Android/iOS 原生 App
 
-![version](https://img.shields.io/badge/version-0.1.0-ffb7d5) ![uniapp](https://img.shields.io/badge/uniapp-Vue3-d896ff) ![license](https://img.shields.io/badge/license-MIT-4ade80)
+![version](https://img.shields.io/badge/version-0.1.0-ffb7d5) ![uniapp](https://img.shields.io/badge/uniapp-Vue3-d896ff) ![license](https://img.shields.io/badge/license-MIT-4ade80) ![build](https://img.shields.io/github/actions/workflow/status/qw2548er/SakuraMC-Launcher/release.yml?label=构建状态)
+
+## 📦 下载
+
+**最新版本**: [v0.1.0](https://github.com/qw2548er/SakuraMC-Launcher/releases/tag/v0.1.0)
+
+| 平台 | 下载 | 说明 |
+|------|------|------|
+| 🪟 Windows | [安装版 / 便携版](https://github.com/qw2548er/SakuraMC-Launcher/releases/latest) | Electron 打包, 原生体验 |
+| 📱 Android | [APK](https://github.com/qw2548er/SakuraMC-Launcher/releases/latest) | Cordova 打包, 支持 Android 5.0+ |
+| 🌐 H5 网页版 | [在线预览 / 下载](https://github.com/qw2548er/SakuraMC-Launcher/releases/latest) | 浏览器直接用, 免安装 |
+
+> 所有版本由 GitHub Actions 自动构建, 点击上方「构建状态」徽章查看进度
 
 ## ✨ 功能特性
 
