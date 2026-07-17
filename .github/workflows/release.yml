@@ -121,12 +121,19 @@ jobs:
         working-directory: build/mobile
         run: |
           cordova platform add android@13 --no-interactive
-          cordova build android --debug
+          cordova build android --debug --buildConfig=build.json
 
       - name: 重命名 APK
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          cp build/mobile/platforms/android/app/build/outputs/apk/debug/app-debug.apk "SakuraMC-Launcher-${VERSION}-android.apk"
+          find build/mobile/platforms/android/app/build/outputs -name "*.apk" -type f 2>/dev/null || true
+          APK_FILE=$(find build/mobile/platforms/android/app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "APK not found, listing outputs..."
+            ls -la build/mobile/platforms/android/app/build/outputs/
+            exit 1
+          fi
+          cp "$APK_FILE" "SakuraMC-Launcher-${VERSION}-android.apk"
           ls -lh SakuraMC-Launcher-*.apk
 
       - name: 上传 APK
@@ -183,6 +190,9 @@ jobs:
 
             ### ✨ 本版本更新
 
+            - 🔐 **固定签名密钥** - 所有版本使用同一签名，支持正常覆盖安装，无需卸载旧版
+            - 📦 **正式 Release 构建** - 从 Debug 版改为 Release 版，更稳定流畅
+            - 🔄 **版本无缝升级** - v0.1.4 及以后版本可直接覆盖安装，数据不丢失
             - 🌊 **沉浸式全屏体验** - 状态栏和导航栏透明，内容延伸到全屏
             - 📱 **刘海屏/全面屏适配** - 支持安全区域，内容不会被挖孔遮挡
             - 🎨 **消除割裂感** - 应用背景与系统栏融为一体，视觉更统一

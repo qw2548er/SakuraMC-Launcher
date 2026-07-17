@@ -1,0 +1,18 @@
+{
+  "android": {
+    "debug": {
+      "keystore": "signing/sakuramc-release.keystore",
+      "storePassword": "sakuramc123",
+      "alias": "sakuramc",
+      "password": "sakuramc123",
+      "keystoreType": "jks"
+    },
+    "release": {
+      "keystore": "signing/sakuramc-release.keystore",
+      "storePassword": "sakuramc123",
+      "alias": "sakuramc",
+      "password": "sakuramc123",
+      "keystoreType": "jks"
+    }
+  }
+}
