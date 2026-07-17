@@ -1,0 +1,52 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.sakuramc.launcher" version="0.1.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>樱花MC启动器</name>
+    <description>
+        跨平台 Minecraft Java 版启动器 + 完整樱花穿透控制台
+    </description>
+    <author email="support@sakuramc.com" href="https://github.com/qw2548er/SakuraMC-Launcher">
+        SakuraMC Team
+    </author>
+    <content src="index.html" />
+    <access origin="*" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <allow-intent href="tel:*" />
+    <allow-intent href="sms:*" />
+    <allow-intent href="mailto:*" />
+    <allow-intent href="geo:*" />
+    <preference name="Fullscreen" value="false" />
+    <preference name="Orientation" value="default" />
+    <preference name="BackgroundColor" value="#0f0f1a" />
+    <preference name="StatusBarBackgroundColor" value="#1a0f2e" />
+    <preference name="StatusBarStyle" value="lightcontent" />
+    <preference name="AndroidInsecureFileModeEnabled" value="true" />
+    <preference name="Scheme" value="sakuramc" />
+    <preference name="AndroidLaunchMode" value="singleTask" />
+    <preference name="android-minSdkVersion" value="22" />
+    <preference name="android-targetSdkVersion" value="33" />
+    <preference name="android-build-tool" value="gradle" />
+    <platform name="android">
+        <allow-intent href="market:*" />
+        <preference name="android-minSdkVersion" value="22" />
+        <preference name="android-targetSdkVersion" value="33" />
+        <preference name="android-installLocation" value="auto" />
+        <icon density="ldpi" src="res/icon/android/icon-36-ldpi.png" />
+        <icon density="mdpi" src="res/icon/android/icon-48-mdpi.png" />
+        <icon density="hdpi" src="res/icon/android/icon-72-hdpi.png" />
+        <icon density="xhdpi" src="res/icon/android/icon-96-xhdpi.png" />
+        <icon density="xxhdpi" src="res/icon/android/icon-144-xxhdpi.png" />
+        <icon density="xxxhdpi" src="res/icon/android/icon-192-xxxhdpi.png" />
+    </platform>
+    <platform name="ios">
+        <allow-intent href="itms:*" />
+        <allow-intent href="itms-apps:*" />
+        <icon height="57" src="res/icon/ios/icon-57.png" width="57" />
+        <icon height="72" src="res/icon/ios/icon-72.png" width="72" />
+    </platform>
+    <plugin name="cordova-plugin-whitelist" spec="1.3.5" />
+    <plugin name="cordova-plugin-statusbar" spec="3.0.0" />
+    <plugin name="cordova-plugin-inappbrowser" spec="5.0.0" />
+    <plugin name="cordova-plugin-file" spec="7.0.0" />
+    <plugin name="cordova-plugin-file-opener2" spec="3.0.5" />
+</widget>

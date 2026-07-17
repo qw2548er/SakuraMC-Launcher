@@ -1,0 +1,11 @@
+{
+  "name": "sakura-mc-launcher-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "樱花MC启动器 - 手机版 (Cordova 包装)",
+  "scripts": {
+    "build:android": "cordova build android --debug",
+    "build:android-release": "cordova build android --release",
+    "run:android": "cordova run android"
+  }
+}

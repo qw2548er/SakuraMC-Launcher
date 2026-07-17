@@ -1,0 +1,28 @@
+node_modules/
+dist/
+unpackage/
+.cache/
+.DS_Store
+*.log
+.env
+.env.local
+.idea/
+.vscode/
+*.tsbuildinfo
+
+# Electron / Cordova 构建产物
+build/desktop/node_modules/
+build/desktop/release/
+build/desktop/web/
+build/mobile/node_modules/
+build/mobile/platforms/
+build/mobile/plugins/
+build/mobile/www/
+
+# APK / EXE 产物
+*.apk
+*.exe
+*.app
+*.dmg
+*.AppImage
+*.zip.upload
