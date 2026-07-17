@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.sakuramc.launcher" version="0.1.2" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+<widget id="com.sakuramc.launcher" version="0.1.3" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
     <name>樱花MC启动器</name>
     <description>
         跨平台 Minecraft Java 版启动器 + 完整樱花穿透控制台
@@ -15,11 +15,12 @@
     <allow-intent href="sms:*" />
     <allow-intent href="mailto:*" />
     <allow-intent href="geo:*" />
-    <preference name="Fullscreen" value="false" />
+    <preference name="Fullscreen" value="true" />
     <preference name="Orientation" value="default" />
     <preference name="BackgroundColor" value="#0f0f1a" />
-    <preference name="StatusBarBackgroundColor" value="#1a0f2e" />
+    <preference name="StatusBarBackgroundColor" value="#00000000" />
     <preference name="StatusBarStyle" value="lightcontent" />
+    <preference name="StatusBarOverlaysWebView" value="true" />
     <preference name="AndroidInsecureFileModeEnabled" value="true" />
     <preference name="AndroidLaunchMode" value="singleTask" />
     <preference name="android-minSdkVersion" value="22" />
@@ -31,6 +32,8 @@
     <preference name="ShowSplashScreenSpinner" value="false" />
     <preference name="DisallowOverscroll" value="true" />
     <preference name="ErrorUrl" value="error.html" />
+    <preference name="EnableViewportScale" value="false" />
+    <preference name="MediaPlaybackRequiresUserAction" value="false" />
     <platform name="android">
         <allow-intent href="market:*" />
         <preference name="android-minSdkVersion" value="22" />
