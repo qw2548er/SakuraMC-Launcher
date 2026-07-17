@@ -1,6 +1,6 @@
 {
   "name": "sakura-mc-launcher",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MC 启动器 + 樱花穿透跨端控制台 (Uniapp Vue3)",
   "private": true,
   "scripts": {
@@ -8,7 +8,7 @@
     "dev:app": "uni -p app",
     "dev:app-android": "uni -p app-android",
     "dev:app-ios": "uni -p app-ios",
-    "build:h5": "uni build",
+    "build:h5": "uni build && node scripts/post-build-h5.js",
     "build:app": "uni build -p app",
     "build:app-android": "uni build -p app-android",
     "build:app-ios": "uni build -p app-ios",

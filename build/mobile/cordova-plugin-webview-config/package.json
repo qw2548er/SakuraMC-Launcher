@@ -1,0 +1,14 @@
+{
+  "name": "cordova-plugin-webview-config",
+  "version": "1.0.0",
+  "description": "WebView 配置优化插件",
+  "main": "www/webview-config.js",
+  "scripts": {},
+  "keywords": ["cordova", "webview"],
+  "author": "SakuraMC",
+  "license": "MIT",
+  "cordova": {
+    "id": "cordova-plugin-webview-config",
+    "platforms": ["android"]
+  }
+}

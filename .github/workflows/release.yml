@@ -104,15 +104,15 @@ jobs:
           mkdir -p build/mobile/www
           unzip -o SakuraMC-Launcher-*-H5.zip -d build/mobile/www
 
-      - name: 复制启动页
-        run: cp build/mobile/launcher.html build/mobile/www/launcher.html
+      - name: 复制错误页
+        run: cp build/mobile/error.html build/mobile/www/error.html
 
       - name: 安装 Cordova
         run: npm install -g cordova
 
-      - name: 安装本地HTTP服务器插件
+      - name: 安装 WebView 优化插件
         working-directory: build/mobile
-        run: cordova plugin add ./cordova-plugin-local-httpd --no-interactive
+        run: cordova plugin add ./cordova-plugin-webview-config --no-interactive
 
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v3
@@ -183,10 +183,11 @@ jobs:
 
             ### ✨ 本版本更新
 
-            - 🔥 **内置本地HTTP服务器** - 彻底解决 file:// 协议加载问题, 启动更稳定
-            - 📱 **手机端优化** - 启动时自动起服务, 无需担心网络问题
-            - 🖥️ **桌面端优化** - Electron 内置本地服务器, 体验更流畅
-            - 🐛 **修复启动失败问题** - 解决部分设备上"启动失败,请刷新页面或检查网络"的错误
+            - 🔧 **修复手机端加载失败问题** - 移除 crossorigin 属性，优化 WebView 配置
+            - 📱 **WebView 全面优化** - 启用文件访问、DOM存储、混合内容，兼容更多设备
+            - 🚀 **简化启动流程** - 直接加载 index.html，减少中间环节，启动更快
+            - 🛡️ **错误页兜底** - 加载失败时显示友好的错误提示页
+            - 🎯 **构建目标调整** - 兼容 ES2015，支持更多旧版 WebView
 
             ### ✨ 主要功能
 
