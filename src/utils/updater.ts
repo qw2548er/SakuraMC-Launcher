@@ -3,7 +3,7 @@ import type { IAppUpdate } from '@/types'
 const GITHUB_API = 'https://api.github.com/repos/qw2548er/SakuraMC-Launcher/releases/latest'
 const GITHUB_RELEASE = 'https://github.com/qw2548er/SakuraMC-Launcher/releases/latest'
 
-export const APP_VERSION = '0.2.2'
+export const APP_VERSION = '0.2.3'
 
 function compareVersion(v1: string, v2: string): number {
   const a = v1.replace(/^v/, '').split('.').map(n => parseInt(n, 10))
@@ -15,6 +15,52 @@ function compareVersion(v1: string, v2: string): number {
     if (x < y) return -1
   }
   return 0
+}
+
+export function getPlatform(): 'h5' | 'android' | 'ios' | 'windows' | 'macos' | 'linux' | 'unknown' {
+  // #ifdef H5
+  const ua = navigator.userAgent.toLowerCase()
+  if (ua.includes('android')) return 'android'
+  if (ua.includes('iphone') || ua.includes('ipad')) return 'ios'
+  if (ua.includes('windows')) return 'windows'
+  if (ua.includes('mac')) return 'macos'
+  if (ua.includes('linux')) return 'linux'
+  return 'h5'
+  // #endif
+  // #ifdef APP-PLUS
+  // #ifdef APP-PLUS-ANDROID
+  return 'android'
+  // #endif
+  // #ifdef APP-PLUS-IOS
+  return 'ios'
+  // #endif
+  return 'android'
+  // #endif
+  return 'unknown'
+}
+
+export function getPlatformAsset(assets: { name: string; browser_download_url: string; size: number }[]) {
+  const platform = getPlatform()
+  
+  const patterns: Record<string, string[]> = {
+    android: ['.apk', 'android'],
+    windows: ['.exe', 'win', 'windows'],
+    macos: ['.dmg', 'mac', 'macos'],
+    linux: ['.AppImage', '.deb', '.rpm', 'linux'],
+    h5: ['.zip', 'h5', 'web'],
+    ios: ['.ipa', 'ios']
+  }
+  
+  const checkPatterns = patterns[platform] || patterns.h5
+  
+  for (const pattern of checkPatterns) {
+    const asset = assets.find(a => 
+      a.name.toLowerCase().includes(pattern.toLowerCase())
+    )
+    if (asset) return asset
+  }
+  
+  return assets[0] || null
 }
 
 export async function checkUpdate(): Promise<IAppUpdate | null> {
