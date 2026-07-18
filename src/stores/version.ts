@@ -153,28 +153,38 @@ export const useVersionStore = defineStore('version', {
       uni.showToast({ title: '正在获取版本信息...', icon: 'none', duration: 2000 })
       try {
         console.log('[Download] 开始下载版本:', versionId, '源:', settings.downloadSource)
-        // 确保清单已加载
         if (!this.manifest) {
           await this.loadManifest(true)
         }
-        const versionJson = await bmcl.getVersionJson(versionId, settings.downloadSource)
-        console.log('[Download] 版本 JSON 获取成功:', versionId)
-        const client = versionJson?.downloads?.client
-        if (!client?.url) {
-          this.updateDownload(task.id, { status: 'error', error: '版本客户端 URL 不可用' })
-          uni.showToast({ title: '获取版本下载地址失败', icon: 'none' })
-          return
+        let versionJson: any = null
+        let client: any = null
+        let clientUrl: string = ''
+        try {
+          versionJson = await bmcl.getVersionJson(versionId, settings.downloadSource)
+          console.log('[Download] 版本 JSON 获取成功:', versionId)
+          client = versionJson?.downloads?.client
+          if (!client?.url) {
+            throw new Error('版本 JSON 中没有客户端下载地址')
+          }
+        } catch (e: any) {
+          console.warn('[Download] 首选源获取失败,尝试直接构建下载地址:', e.message)
+          clientUrl = await this.buildDirectDownloadUrl(versionId, settings.downloadSource)
+          if (!clientUrl) {
+            throw new Error('无法构建下载地址')
+          }
+          client = { url: clientUrl, size: 0 }
         }
-        let clientUrl = client.url
-        // 替换为镜像源
-        if (settings.downloadSource === 'bmcl') {
-          clientUrl = clientUrl
-            .replace('https://launcher.mojang.com', 'https://bmclapi2.bangbang93.com')
-            .replace('https://piston-data.mojang.com', 'https://bmclapi2.bangbang93.com')
-        } else if (settings.downloadSource === 'mcbbs') {
-          clientUrl = clientUrl
-            .replace('https://launcher.mojang.com', 'https://download.mcbbs.net')
-            .replace('https://piston-data.mojang.com', 'https://download.mcbbs.net')
+        if (!clientUrl) {
+          clientUrl = client.url
+          if (settings.downloadSource === 'bmcl') {
+            clientUrl = clientUrl
+              .replace('https://launcher.mojang.com', 'https://bmclapi2.bangbang93.com')
+              .replace('https://piston-data.mojang.com', 'https://bmclapi2.bangbang93.com')
+          } else if (settings.downloadSource === 'mcbbs') {
+            clientUrl = clientUrl
+              .replace('https://launcher.mojang.com', 'https://download.mcbbs.net')
+              .replace('https://piston-data.mojang.com', 'https://download.mcbbs.net')
+          }
         }
         console.log('[Download] 客户端下载地址:', clientUrl)
         this.updateDownload(task.id, {
@@ -211,6 +221,49 @@ export const useVersionStore = defineStore('version', {
         this.updateDownload(task.id, { status: 'error', error: e.message })
         uni.showToast({ title: '下载失败: ' + (e.message || '未知错误'), icon: 'none', duration: 5000 })
       }
+    },
+    async buildDirectDownloadUrl(versionId: string, source: string): Promise<string> {
+      const bmclBase = 'https://bmclapi2.bangbang93.com'
+      const mcbbsBase = 'https://download.mcbbs.net'
+      try {
+        const versionUrl = `${bmclBase}/mc/version/${versionId}`
+        console.log('[Download] 尝试直接获取版本信息:', versionUrl)
+        const r = await uni.request({ url: versionUrl })
+        const v = r.data
+        if (v?.downloads?.client?.url) {
+          return v.downloads.client.url
+        }
+        if (v?.downloads?.client?.sha1) {
+          const sha1 = v.downloads.client.sha1
+          return `${bmclBase}/mc/download/${sha1}`
+        }
+      } catch (e) {
+        console.warn('[Download] BMCL 直接获取失败:', e.message)
+      }
+      try {
+        const mojangUrl = `https://piston-meta.mojang.com/mc/game/version_manifest_v2.json`
+        const r = await uni.request({ url: mojangUrl })
+        const manifest = r.data
+        const version = manifest.versions.find((x: any) => x.id === versionId)
+        if (version?.url) {
+          const rv = await uni.request({ url: version.url })
+          const v = rv.data
+          if (v?.downloads?.client?.url) {
+            let url = v.downloads.client.url
+            if (source === 'bmcl') {
+              url = url.replace('https://launcher.mojang.com', bmclBase)
+              url = url.replace('https://piston-data.mojang.com', bmclBase)
+            } else if (source === 'mcbbs') {
+              url = url.replace('https://launcher.mojang.com', mcbbsBase)
+              url = url.replace('https://piston-data.mojang.com', mcbbsBase)
+            }
+            return url
+          }
+        }
+      } catch (e) {
+        console.warn('[Download] Mojang 获取失败:', e.message)
+      }
+      return ''
     },
 
     async cancelDownload(versionId: string) {

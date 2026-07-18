@@ -51,18 +51,41 @@ export async function getVersionManifestV2(source: DownloadSource = 'bmcl') {
 
 /** 单个版本 manifest */
 export async function getVersionJson(versionId: string, source: DownloadSource = 'bmcl') {
-  // 1. 先获取清单
   const manifest = await getVersionManifest(source)
   const v = manifest.versions.find((x: any) => x.id === versionId)
   if (!v) throw new Error(`版本不存在: ${versionId}`)
-  // 2. 下载版本 json (走镜像)
   let jsonUrl = v.url
+  let result: any = null
   if (source === 'bmcl' && jsonUrl.includes('piston-meta.mojang.com')) {
     jsonUrl = jsonUrl.replace('https://piston-meta.mojang.com', BMCL_BASE + '/mc')
+    try {
+      const r = await uni.request({ url: jsonUrl })
+      result = r.data
+      if (!result?.downloads?.client?.url) {
+        throw new Error('BMCL 镜像数据不完整')
+      }
+    } catch (e) {
+      console.warn('[BMCL] 镜像获取失败,回退到 Mojang:', e.message)
+      jsonUrl = v.url
+    }
   } else if (source === 'mcbbs' && jsonUrl.includes('piston-meta.mojang.com')) {
     jsonUrl = jsonUrl.replace('https://piston-meta.mojang.com', MCBBS_BASE + '/mc')
+    try {
+      const r = await uni.request({ url: jsonUrl })
+      result = r.data
+      if (!result?.downloads?.client?.url) {
+        throw new Error('MCBBS 镜像数据不完整')
+      }
+    } catch (e) {
+      console.warn('[MCBBS] 镜像获取失败,回退到 Mojang:', e.message)
+      jsonUrl = v.url
+    }
   }
-  return uni.request({ url: jsonUrl }).then((r: any) => r.data)
+  if (!result) {
+    const r = await uni.request({ url: jsonUrl })
+    result = r.data
+  }
+  return result
 }
 
 /** Fabric Loader 元数据 */
