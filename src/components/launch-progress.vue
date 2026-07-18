@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useVersionStore } from '@/stores/version'
 import { useSettingsStore } from '@/stores/settings'
@@ -9,7 +9,6 @@ import { copyText, downloadFile } from '@/utils/format'
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'commandReady', command: string): void
 }>()
 
 const accountStore = useAccountStore()
@@ -22,15 +21,18 @@ const steps = ref([
   { id: 'checkDependencies', label: '检查依赖', status: 'pending' },
   { id: 'checkIntegrity', label: '检查资源文件完整性', status: 'pending' },
   { id: 'login', label: '登录', status: 'pending' },
-  { id: 'launch', label: '等待游戏启动', status: 'pending' }
+  { id: 'launch', label: '启动游戏', status: 'pending' }
 ])
 
 const currentStep = ref(0)
 const progress = ref(0)
 const speed = ref('0 B/s')
-const showCommand = ref(false)
-const launchCommand = ref('')
+const showTerminal = ref(false)
+const terminalOutput = ref('')
+const terminalScroll = ref<number>(0)
 const isLaunching = ref(false)
+const launchCommand = ref('')
+const commandStatus = ref<'running' | 'done' | 'error'>('running')
 
 function getStep(id: string) {
   return steps.value.find(s => s.id === id)!
@@ -41,7 +43,7 @@ function setStepStatus(id: string, status: 'pending' | 'checking' | 'done' | 'er
   step.status = status
 }
 
-async function runStep(id: string, label: string, delay = 800) {
+async function runStep(id: string, delay = 800) {
   setStepStatus(id, 'checking')
   currentStep.value = steps.value.findIndex(s => s.id === id)
   await new Promise(r => setTimeout(r, delay))
@@ -49,15 +51,67 @@ async function runStep(id: string, label: string, delay = 800) {
   progress.value = ((currentStep.value + 1) / steps.value.length) * 100
 }
 
+function appendToTerminal(text: string) {
+  terminalOutput.value += text + '\n'
+  nextTick(() => {
+    terminalScroll.value = terminalOutput.value.length
+  })
+}
+
+async function runCommandOnAndroid(cmd: string) {
+  appendToTerminal(`> ${cmd}`)
+  appendToTerminal('------------------------')
+  
+  try {
+    const exec = require('cordova-plugin-shell-exec')
+    return new Promise<void>((resolve, reject) => {
+      exec.exec(cmd, (output: any, error: any) => {
+        if (error) {
+          appendToTerminal(`[错误] ${error}`)
+          reject(new Error(error))
+        } else {
+          appendToTerminal(output)
+          resolve()
+        }
+      })
+    })
+  } catch (e: any) {
+    try {
+      const runtime = plus.android.runtimeMainActivity()
+      const processBuilder = plus.android.newObject('java.lang.ProcessBuilder')
+      plus.android.invoke(processBuilder, 'command', cmd)
+      const process = plus.android.invoke(processBuilder, 'start')
+      
+      const reader = plus.android.newObject('java.io.BufferedReader', 
+        plus.android.newObject('java.io.InputStreamReader', 
+          plus.android.invoke(process, 'getInputStream')))
+      
+      let line = ''
+      while ((line = plus.android.invoke(reader, 'readLine')) !== null) {
+        appendToTerminal(line)
+        await new Promise(r => setTimeout(r, 50))
+      }
+      
+      const exitCode = plus.android.invoke(process, 'waitFor')
+      if (exitCode !== 0) {
+        appendToTerminal(`[进程退出] 代码: ${exitCode}`)
+      }
+    } catch (e2: any) {
+      appendToTerminal(`[无法执行] ${e2.message}`)
+      appendToTerminal('请确保已安装 Java 环境')
+    }
+  }
+}
+
 async function startLaunch() {
   isLaunching.value = true
   
   try {
-    await runStep('checkJava', '检查 Java')
-    await runStep('checkDependencies', '检查依赖')
-    await runStep('checkIntegrity', '检查资源文件完整性')
-    await runStep('login', '登录')
-    await runStep('launch', '等待游戏启动')
+    await runStep('checkJava')
+    await runStep('checkDependencies')
+    await runStep('checkIntegrity')
+    await runStep('login')
+    await runStep('launch')
     
     const account = accountStore.selected!
     const version = versionStore.selected!
@@ -77,11 +131,17 @@ async function startLaunch() {
     launchCommand.value = buildSingleLine(cmd)
     
     // #ifdef APP-PLUS
-    showCommand.value = true
-    // #endif
+    showTerminal.value = true
+    appendToTerminal('樱花 MC 启动器 v0.2.9')
+    appendToTerminal('正在启动 Minecraft ' + version.id + '...')
+    appendToTerminal('')
     
-    // #ifdef H5
-    showCommand.value = true
+    await runCommandOnAndroid(launchCommand.value)
+    
+    commandStatus.value = 'done'
+    appendToTerminal('')
+    appendToTerminal('[游戏已启动]')
+    appendToTerminal('如果游戏窗口没有自动弹出,请检查后台应用')
     // #endif
     
     // #ifdef ELECTRON
@@ -104,11 +164,33 @@ async function startLaunch() {
       shell.openPath(shPath)
     }
     
-    showCommand.value = true
+    showTerminal.value = true
+    appendToTerminal('樱花 MC 启动器')
+    appendToTerminal('启动脚本已创建并运行')
+    appendToTerminal('游戏窗口应该会自动弹出')
+    appendToTerminal('')
+    appendToTerminal('命令:')
+    appendToTerminal(launchCommand.value)
+    commandStatus.value = 'done'
+    // #endif
+    
+    // #ifdef H5
+    showTerminal.value = true
+    appendToTerminal('樱花 MC 启动器')
+    appendToTerminal('警告: 浏览器环境无法直接启动游戏')
+    appendToTerminal('请在 PC 上复制以下命令到终端执行')
+    appendToTerminal('')
+    appendToTerminal('命令:')
+    appendToTerminal(launchCommand.value)
+    appendToTerminal('')
+    appendToTerminal('或下载启动脚本双击运行')
+    commandStatus.value = 'done'
     // #endif
     
   } catch (e: any) {
     setStepStatus(steps.value[currentStep.value]?.id || 'launch', 'error')
+    appendToTerminal(`[错误] ${e.message}`)
+    commandStatus.value = 'error'
     uni.showToast({ title: '启动失败: ' + (e.message || ''), icon: 'none' })
   } finally {
     isLaunching.value = false
@@ -175,7 +257,7 @@ onMounted(() => {
         <text class="lp-close" @tap="emit('close')">✕</text>
       </view>
       
-      <view v-if="!showCommand" class="lp-body">
+      <view v-if="!showTerminal" class="lp-body">
         <view class="lp-progress-bar">
           <view class="lp-progress-fill" :style="{ width: progress + '%' }" />
         </view>
@@ -207,12 +289,26 @@ onMounted(() => {
       </view>
       
       <view v-else class="lp-body">
-        <text class="lp-success-icon">✓</text>
-        <text class="lp-success-text">游戏启动命令已生成</text>
+        <text class="lp-success-icon" :class="{ 'lp-success-icon--error': commandStatus === 'error' }">
+          {{ commandStatus === 'done' ? '✓' : commandStatus === 'error' ? '✕' : '▶' }}
+        </text>
+        <text class="lp-success-text">
+          {{ commandStatus === 'done' ? '游戏启动成功' : commandStatus === 'error' ? '启动失败' : '游戏启动中' }}
+        </text>
         
-        <text class="lp-tip">请在 PC 上打开终端,粘贴并执行以下命令,或下载启动脚本双击运行:</text>
+        <view class="lp-terminal">
+          <scroll-view 
+            scroll-y 
+            class="lp-terminal__content"
+            :scroll-top="terminalScroll"
+            scroll-with-animation
+          >
+            <text class="lp-terminal__text" user-select="text">{{ terminalOutput }}</text>
+          </scroll-view>
+        </view>
         
-        <view class="lp-cmd-box">
+        <view class="lp-cmd-box" v-if="commandStatus === 'done'">
+          <text class="lp-cmd-label">启动命令:</text>
           <text class="lp-cmd" user-select="text">{{ launchCommand }}</text>
         </view>
         
@@ -239,22 +335,25 @@ onMounted(() => {
 .lp-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.85);
   z-index: 999;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 32rpx;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
 }
 
 .lp-panel {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(20, 18, 30, 0.95);
   border: 2rpx solid rgba(255, 183, 213, 0.3);
   border-radius: 20rpx;
   width: 100%;
-  max-width: 560rpx;
+  max-width: 600rpx;
+  max-height: 85vh;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .lp-header {
@@ -263,6 +362,7 @@ onMounted(() => {
   align-items: center;
   padding: 24rpx 32rpx;
   border-bottom: 2rpx solid rgba(255, 183, 213, 0.15);
+  flex-shrink: 0;
 }
 
 .lp-title {
@@ -279,6 +379,8 @@ onMounted(() => {
 
 .lp-body {
   padding: 32rpx;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .lp-progress-bar {
@@ -371,6 +473,11 @@ onMounted(() => {
   border-radius: 50%;
   font-size: 40rpx;
   color: #52c41a;
+  
+  &--error {
+    background: rgba(255, 107, 107, 0.2);
+    color: #ff6b6b;
+  }
 }
 
 .lp-success-text {
@@ -382,12 +489,25 @@ onMounted(() => {
   margin-bottom: 24rpx;
 }
 
-.lp-tip {
-  display: block;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 20rpx;
-  line-height: 1.6;
+.lp-terminal {
+  background: rgba(0, 0, 0, 0.6);
+  border: 2rpx solid rgba(255, 183, 213, 0.15);
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 24rpx;
+  
+  &__content {
+    max-height: 400rpx;
+  }
+  
+  &__text {
+    font-size: 24rpx;
+    color: #52c41a;
+    font-family: 'Consolas', 'Monaco', monospace;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
 }
 
 .lp-cmd-box {
@@ -395,9 +515,14 @@ onMounted(() => {
   padding: 20rpx;
   border-radius: 12rpx;
   border: 2rpx solid rgba(255, 183, 213, 0.15);
-  max-height: 300rpx;
-  overflow-y: auto;
   margin-bottom: 24rpx;
+}
+
+.lp-cmd-label {
+  display: block;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 12rpx;
 }
 
 .lp-cmd {
