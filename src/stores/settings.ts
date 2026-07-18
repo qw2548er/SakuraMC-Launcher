@@ -18,7 +18,9 @@ const defaultSettings: ISettings = {
   theme: 'dark',
   language: 'zh-CN',
   frpcBinaryPath: '',
-  frpcLogLevel: 'info'
+  frpcLogLevel: 'info',
+  ignoredVersion: '',
+  autoCheckUpdate: true
 }
 
 export const useSettingsStore = defineStore('settings', {

@@ -6,22 +6,31 @@ import { useVersionStore } from '@/stores/version'
 import { useServerStore } from '@/stores/server'
 import { useFrpStore } from '@/stores/frp'
 import { useSettingsStore } from '@/stores/settings'
+import { useJavaStore } from '@/stores/java'
 import McButton from '@/components/mc-button.vue'
 import McCard from '@/components/mc-card.vue'
 import McBadge from '@/components/mc-badge.vue'
 import GameIcon from '@/components/game-icon.vue'
 import NotDeveloped from '@/components/not-developed.vue'
+import AnnouncementBar from '@/components/announcement-bar.vue'
+import UpdateModal from '@/components/update-modal.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
+import { checkUpdate } from '@/utils/updater'
+import type { IAppUpdate } from '@/types'
 
 const accountStore = useAccountStore()
 const versionStore = useVersionStore()
 const serverStore = useServerStore()
 const frpStore = useFrpStore()
 const settingsStore = useSettingsStore()
+const javaStore = useJavaStore()
 
 const showLaunchModal = ref(false)
 const showCommand = ref('')
+const showUpdateModal = ref(false)
+const latestUpdate = ref<IAppUpdate | null>(null)
+const announcement = ref('🌸 欢迎使用樱花 MC 启动器 · v0.1.5 发布啦！修复下载真实性问题，添加更新检测功能 · 点击查看更多')
 
 onShow(() => {
   if (!versionStore.manifest) versionStore.loadManifest()
@@ -34,6 +43,7 @@ const onlineServers = computed(() => serverStore.servers.filter(s => s.status ==
 const frpStatus = computed(() => frpStore.isLoggedIn ? (frpStore.tunnels.filter(t => t.online).length + '/' + frpStore.tunnels.length) : '未登录')
 const totalMemory = computed(() => settingsStore.maxMemory)
 const activeDownloads = computed(() => versionStore.activeDownloads)
+const selectedJava = computed(() => javaStore.selectedVersion)
 
 function chooseAccount() {
   uni.navigateTo({ url: '/pages/accounts/accounts' })
@@ -46,6 +56,12 @@ function openServer() {
 }
 function openFrp() {
   uni.switchTab({ url: '/pages/frp/frp' })
+}
+function openSettings() {
+  uni.switchTab({ url: '/pages/settings/settings' })
+}
+function selectJava(id: string) {
+  javaStore.selectVersion(id)
 }
 
 function startGame() {
@@ -64,11 +80,12 @@ function startGame() {
     uni.showToast({ title: '请先下载游戏版本', icon: 'none' })
     return
   }
+  const javaPath = selectedJava.value?.path || settingsStore.javaPath || 'java'
   const cmd = buildLaunchCommand({
     account: selectedAccount.value,
     version: selectedVersion.value,
     gameDir: settingsStore.gameDir,
-    javaPath: settingsStore.javaPath || 'java',
+    javaPath,
     memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
     jvmArgs: ['-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC', '-XX:G1NewSizePercent=20', '-XX:G1ReservePercent=20', '-XX:MaxGCPauseMillis=50', '-XX:G1MixedGCCountTarget=4'],
     gameArgs: [],
@@ -84,11 +101,12 @@ function copyCmd() {
 }
 function downloadBat() {
   if (!selectedAccount.value || !selectedVersion.value) return
+  const javaPath = selectedJava.value?.path || settingsStore.javaPath || 'java'
   const cmd = buildLaunchCommand({
     account: selectedAccount.value,
     version: selectedVersion.value,
     gameDir: settingsStore.gameDir,
-    javaPath: settingsStore.javaPath || 'java',
+    javaPath,
     memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
     jvmArgs: [],
     gameArgs: [],
@@ -100,11 +118,12 @@ function downloadBat() {
 }
 function downloadSh() {
   if (!selectedAccount.value || !selectedVersion.value) return
+  const javaPath = selectedJava.value?.path || settingsStore.javaPath || 'java'
   const cmd = buildLaunchCommand({
     account: selectedAccount.value,
     version: selectedVersion.value,
     gameDir: settingsStore.gameDir,
-    javaPath: settingsStore.javaPath || 'java',
+    javaPath,
     memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
     jvmArgs: [],
     gameArgs: [],
@@ -115,79 +134,125 @@ function downloadSh() {
   uni.showToast({ title: '已下载 .sh 启动脚本', icon: 'success' })
 }
 
+function ignoreUpdate() {
+  if (latestUpdate.value) {
+    settingsStore.update({ ignoredVersion: latestUpdate.value.version })
+  }
+  showUpdateModal.value = false
+}
+
+async function doCheckUpdate() {
+  if (!settingsStore.autoCheckUpdate) return
+  const update = await checkUpdate()
+  if (update && update.version !== settingsStore.ignoredVersion) {
+    latestUpdate.value = update
+    showUpdateModal.value = true
+  }
+}
+
 onMounted(() => {
   versionStore.loadManifest()
+  javaStore.load()
+  settingsStore.load()
+  setTimeout(doCheckUpdate, 1500)
 })
 </script>
 
 <template>
   <view class="home">
-    <view class="home__hero">
-      <view class="home__bg">
-        <view class="home__petal home__petal--1">🌸</view>
-        <view class="home__petal home__petal--2">🌸</view>
-        <view class="home__petal home__petal--3">🌸</view>
-      </view>
-      <view class="home__top">
-        <view class="home__brand">
-          <view class="home__logo">🌸</view>
-          <view>
-            <text class="home__title gradient-text">樱花 MC 启动器</text>
-            <text class="home__subtitle">Sakura · Minecraft · NAT-FRP</text>
+    <UpdateModal v-model:show="showUpdateModal" :update="latestUpdate" @ignore="ignoreUpdate" />
+    
+    <view class="home__layout">
+      <view class="home__sidebar">
+        <view class="java-list">
+          <text class="java-list__title">Java 版本</text>
+          <view
+            v-for="j in javaStore.versions"
+            :key="j.id"
+            class="java-item"
+            :class="{ 'java-item--active': j.id === javaStore.selectedId }"
+            @tap="selectJava(j.id)"
+          >
+            <view class="java-item__icon">☕</view>
+            <text class="java-item__name">{{ j.name }}</text>
+            <view v-if="j.id === javaStore.selectedId" class="java-item__dot" />
+          </view>
+          <view class="java-item java-item--add" @tap="openSettings">
+            <view class="java-item__icon">⚙️</view>
+            <text class="java-item__name">设置</text>
           </view>
         </view>
-        <view class="home__top-right">
-          <text class="home__version-tag">v0.1.5</text>
-        </view>
       </view>
-
-      <McCard glow class="home__launch">
-        <view class="launch-row">
-          <view class="launch-row__icon" @tap="chooseAccount">
-            <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="100" variant="head" bordered />
-            <view v-else class="launch-row__placeholder">
-              <text>👤</text>
+      
+      <view class="home__main">
+        <AnnouncementBar :text="announcement" />
+        
+        <view class="home__hero">
+          <view class="home__bg">
+            <view class="home__petal home__petal--1">🌸</view>
+            <view class="home__petal home__petal--2">🌸</view>
+            <view class="home__petal home__petal--3">🌸</view>
+          </view>
+          <view class="home__top">
+            <view class="home__brand">
+              <view class="home__logo">🌸</view>
+              <view>
+                <text class="home__title gradient-text">樱花 MC 启动器</text>
+                <text class="home__subtitle">Sakura · Minecraft · NAT-FRP</text>
+              </view>
+            </view>
+            <view class="home__top-right">
+              <text class="home__version-tag">v0.1.5</text>
             </view>
           </view>
-          <view class="launch-row__main">
-            <text class="launch-row__label">当前账号</text>
-            <text class="launch-row__value">{{ selectedAccount?.username || '点击登录' }}</text>
-            <text class="launch-row__sub">{{ selectedAccount?.type === 'microsoft' ? '微软账号' : selectedAccount?.type === 'offline' ? '离线账号' : '未登录' }}</text>
-          </view>
-          <text class="launch-row__chevron">›</text>
-        </view>
 
-        <view class="launch-row" @tap="chooseVersion">
-          <view class="launch-row__icon">
-            <view class="launch-row__version-icon">⛏️</view>
-          </view>
-          <view class="launch-row__main">
-            <text class="launch-row__label">游戏版本</text>
-            <text class="launch-row__value">{{ selectedVersion?.id || '未选择' }} <text v-if="selectedVersion" class="launch-row__type">[{{ selectedVersion.type }}]</text></text>
-            <text class="launch-row__sub">{{ selectedVersion?.installed ? '已安装 · 可启动' : '未下载' }}</text>
-          </view>
-          <text class="launch-row__chevron">›</text>
-        </view>
+          <McCard glow class="home__launch">
+            <view class="launch-row" @tap="chooseAccount">
+              <view class="launch-row__icon">
+                <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="100" variant="head" bordered />
+                <view v-else class="launch-row__placeholder">
+                  <text>👤</text>
+                </view>
+              </view>
+              <view class="launch-row__main">
+                <text class="launch-row__label">当前账号</text>
+                <text class="launch-row__value">{{ selectedAccount?.username || '点击登录' }}</text>
+                <text class="launch-row__sub">{{ selectedAccount?.type === 'microsoft' ? '微软账号' : selectedAccount?.type === 'offline' ? '离线账号' : '未登录' }}</text>
+              </view>
+              <text class="launch-row__chevron">›</text>
+            </view>
 
-        <view class="launch-row" @tap="openServer">
-          <view class="launch-row__icon">
-            <view class="launch-row__server-icon">🖥️</view>
-          </view>
-          <view class="launch-row__main">
-            <text class="launch-row__label">快速联机</text>
-            <text class="launch-row__value">{{ serverStore.servers.length }} 个服务器 · {{ onlineServers }} 个在线</text>
-            <text class="launch-row__sub">进入服务器管理</text>
-          </view>
-          <text class="launch-row__chevron">›</text>
-        </view>
+            <view class="launch-row" @tap="chooseVersion">
+              <view class="launch-row__icon">
+                <view class="launch-row__version-icon">⛏️</view>
+              </view>
+              <view class="launch-row__main">
+                <text class="launch-row__label">游戏版本</text>
+                <text class="launch-row__value">{{ selectedVersion?.id || '未选择' }} <text v-if="selectedVersion" class="launch-row__type">[{{ selectedVersion.type }}]</text></text>
+                <text class="launch-row__sub">{{ selectedVersion?.installed ? '已安装 · 可启动' : '未下载' }}</text>
+              </view>
+              <text class="launch-row__chevron">›</text>
+            </view>
 
-        <NotDeveloped variant="banner" feature="游戏启动" plan="v0.2.0" />
-        <view class="home__cta">
-          <McButton size="lg" glow block @click="startGame">▶ 启动游戏</McButton>
-          <text class="home__cta-tip">H5 端将生成启动命令 / 脚本, PC 端下载后双击运行</text>
+            <view class="launch-row" @tap="openSettings">
+              <view class="launch-row__icon">
+                <view class="launch-row__java-icon">☕</view>
+              </view>
+              <view class="launch-row__main">
+                <text class="launch-row__label">Java 环境</text>
+                <text class="launch-row__value">{{ selectedJava?.name || '未配置' }}</text>
+                <text class="launch-row__sub">{{ selectedJava?.path ? selectedJava.path : '点击设置 Java 路径' }}</text>
+              </view>
+              <text class="launch-row__chevron">›</text>
+            </view>
+
+            <NotDeveloped variant="banner" feature="游戏启动" plan="v0.2.0" />
+            <view class="home__cta">
+              <McButton size="lg" glow block @click="startGame">▶ 启动游戏</McButton>
+              <text class="home__cta-tip">H5 端将生成启动命令 / 脚本, PC 端下载后双击运行</text>
+            </view>
+          </McCard>
         </view>
-      </McCard>
-    </view>
 
     <view class="home__content">
       <view class="home__section">
@@ -271,6 +336,8 @@ onMounted(() => {
         <text class="home__footer-text">Powered by Uniapp Vue3</text>
       </view>
     </view>
+    </view>
+    </view>
 
     <view v-if="showLaunchModal" class="home__modal" @tap.self="showLaunchModal = false">
       <view class="home__modal-panel">
@@ -300,6 +367,32 @@ onMounted(() => {
   background: linear-gradient(180deg, #1a0f2e 0%, #0f0f1a 100%);
   position: relative;
   overflow: hidden;
+  
+  &__layout {
+    display: flex;
+    min-height: 100vh;
+  }
+  
+  &__sidebar {
+    width: 180rpx;
+    flex-shrink: 0;
+    background: rgba(15, 15, 26, 0.8);
+    border-right: 2rpx solid rgba(216, 150, 255, 0.1);
+    padding: 24rpx 0;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 10;
+    overflow-y: auto;
+  }
+  
+  &__main {
+    flex: 1;
+    margin-left: 180rpx;
+    min-height: 100vh;
+  }
+  
   &__bg {
     position: absolute;
     inset: 0;
@@ -314,7 +407,7 @@ onMounted(() => {
     &--2 { top: 200rpx; right: 60rpx; animation-delay: 2s; }
     &--3 { top: 480rpx; left: 80rpx; animation-delay: 4s; }
   }
-  &__hero { padding: 60rpx 32rpx 0; position: relative; }
+  &__hero { padding: 40rpx 32rpx 0; position: relative; }
   &__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32rpx; }
   &__brand { display: flex; align-items: center; gap: 16rpx; }
   &__logo {
@@ -383,7 +476,7 @@ onMounted(() => {
     display: flex; align-items: center; justify-content: center;
     font-size: 40rpx;
   }
-  &__version-icon, &__server-icon {
+  &__version-icon, &__server-icon, &__java-icon {
     width: 100rpx; height: 100rpx;
     background: linear-gradient(135deg, #2d1b4e, #1a0f2e);
     border-radius: 16rpx;
@@ -447,6 +540,73 @@ onMounted(() => {
   margin-bottom: 8rpx;
   &__label { font-size: 26rpx; color: #b8a8d4; }
   &__value { font-size: 26rpx; color: #ffffff; font-weight: 600; }
+}
+
+.java-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 12rpx;
+  
+  &__title {
+    font-size: 22rpx;
+    color: #6a5a8a;
+    text-align: center;
+    padding: 12rpx 0 20rpx;
+    letter-spacing: 2rpx;
+  }
+}
+
+.java-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 16rpx 8rpx;
+  border-radius: 16rpx;
+  margin-bottom: 8rpx;
+  position: relative;
+  transition: all 0.2s;
+  
+  &--active {
+    background: linear-gradient(135deg, rgba(255, 183, 213, 0.2), rgba(216, 150, 255, 0.2));
+    border: 2rpx solid rgba(216, 150, 255, 0.3);
+    
+    .java-item__name {
+      color: #ffb7d5;
+    }
+  }
+  
+  &--add {
+    margin-top: 16rpx;
+    opacity: 0.6;
+    
+    &:active {
+      opacity: 1;
+    }
+  }
+  
+  &__icon {
+    font-size: 36rpx;
+  }
+  
+  &__name {
+    font-size: 22rpx;
+    color: #b8a8d4;
+    font-weight: 600;
+    text-align: center;
+  }
+  
+  &__dot {
+    position: absolute;
+    right: 8rpx;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10rpx;
+    height: 10rpx;
+    background: #ffb7d5;
+    border-radius: 50%;
+    box-shadow: 0 0 12rpx rgba(255, 183, 213, 0.8);
+  }
 }
 
 @keyframes float {

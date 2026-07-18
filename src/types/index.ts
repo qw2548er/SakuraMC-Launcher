@@ -125,6 +125,22 @@ export interface ISettings {
   language: 'zh-CN' | 'zh-TW' | 'en-US'
   frpcBinaryPath: string
   frpcLogLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error'
+  ignoredVersion: string
+  autoCheckUpdate: boolean
+}
+
+export interface IAppUpdate {
+  version: string
+  name: string
+  body: string
+  html_url: string
+  published_at: string
+  prerelease: boolean
+  assets: {
+    name: string
+    browser_download_url: string
+    size: number
+  }[]
 }
 
 export interface IDownloadTask {

@@ -141,6 +141,7 @@ function exportConfig() {
         </view>
         <text class="setting-row__arrow">›</text>
       </view>
+      <McSwitch v-model="settingsStore.autoCheckUpdate" label="自动检查更新" desc="启动时检测新版本" />
     </McCard>
 
     <McCard title="下载" class="settings__section">
