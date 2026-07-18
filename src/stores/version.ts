@@ -121,6 +121,9 @@ export const useVersionStore = defineStore('version', {
     clearCompletedDownloads() {
       this.downloads = this.downloads.filter(d => d.status !== 'completed')
     },
+    isDownloading(versionId: string): boolean {
+      return this.downloads.some(d => d.name.includes(versionId) && d.status === 'downloading')
+    },
     async loadModLoaders(mcVersion: string) {
       this.loadingLoaders[mcVersion] = true
       try {

@@ -39,43 +39,97 @@ const filteredLoaders = computed(() => {
 
 async function downloadVersion() {
   if (!currentVersion.value) return
+  if (versionStore.isDownloading(versionId.value)) {
+    uni.showToast({ title: '该版本正在下载中', icon: 'none' })
+    return
+  }
+  if (installed.value) {
+    uni.showToast({ title: '该版本已安装', icon: 'none' })
+    return
+  }
   downloading.value = true
   try {
-    const task = versionStore.addDownload({
-      name: `Minecraft ${versionId.value}`,
-      url: `${bmcl.getApiBase(settingsStore.downloadSource)}/mc/game/${versionId.value}.json`,
-      total: 5_000_000,
+    const apiBase = bmcl.getApiBase(settingsStore.downloadSource)
+    const versionTask = versionStore.addDownload({
+      name: `Minecraft ${versionId.value} - 版本信息`,
+      url: `${apiBase}/mc/game/version_manifest_v2.json`,
+      total: 0,
       downloaded: 0,
       status: 'downloading'
     })
-    // 实际下载
+    let versionJson: any = null
+    try {
+      versionJson = await bmcl.getVersionJson(versionId.value, settingsStore.downloadSource)
+      versionStore.updateDownload(versionTask.id, {
+        status: 'completed',
+        downloaded: 200000,
+        total: 200000
+      })
+    } catch (e: any) {
+      versionStore.updateDownload(versionTask.id, { status: 'error', error: e.message })
+      uni.showToast({ title: '获取版本信息失败: ' + e.message, icon: 'none' })
+      downloading.value = false
+      return
+    }
+    const client = versionJson?.downloads?.client
+    if (!client) {
+      uni.showToast({ title: '版本信息无效', icon: 'none' })
+      downloading.value = false
+      return
+    }
+    let clientUrl = client.url
+    if (settingsStore.downloadSource === 'bmcl') {
+      const bmclBase = bmcl.getApiBase('bmcl')
+      clientUrl = clientUrl
+        .replace('https://launcher.mojang.com', bmclBase)
+        .replace('https://piston-data.mojang.com', bmclBase)
+    } else if (settingsStore.downloadSource === 'mcbbs') {
+      const mcbbsBase = bmcl.getApiBase('mcbbs')
+      clientUrl = clientUrl
+        .replace('https://launcher.mojang.com', mcbbsBase)
+        .replace('https://piston-data.mojang.com', mcbbsBase)
+    }
+    const jarTask = versionStore.addDownload({
+      name: `Minecraft ${versionId.value} - 客户端`,
+      url: clientUrl,
+      total: client.size || 0,
+      downloaded: 0,
+      status: 'downloading'
+    })
     downloadFile({
-      url: task.url,
-      onProgress: (downloaded, total) => {
-        versionStore.updateDownload(task.id, {
+      url: clientUrl,
+      onProgress: (downloaded, total, speed) => {
+        versionStore.updateDownload(jarTask.id, {
           downloaded,
-          total: total || task.total,
-          speed: 0
+          total: total || client.size || 0,
+          speed
         })
       },
-      onSuccess: () => {
-        versionStore.updateDownload(task.id, { status: 'completed', downloaded: task.total, total: task.total })
-        // 标记已安装
+      onSuccess: (path) => {
+        versionStore.updateDownload(jarTask.id, {
+          status: 'completed',
+          downloaded: client.size || 0,
+          total: client.size || 0
+        })
         const v = currentVersion.value!
         versionStore.markInstalled({
           ...v,
           installed: true,
-          installedPath: `./.minecraft/versions/${v.id}`
+          installedPath: path || `./.minecraft/versions/${v.id}`,
+          jarSize: client.size
         })
+        downloading.value = false
         uni.showToast({ title: '下载完成', icon: 'success' })
       },
       onError: (e) => {
-        versionStore.updateDownload(task.id, { status: 'error', error: e.message })
+        versionStore.updateDownload(jarTask.id, { status: 'error', error: e.message })
+        downloading.value = false
         uni.showToast({ title: '下载失败: ' + e.message, icon: 'none' })
       }
     })
-  } finally {
+  } catch (e: any) {
     downloading.value = false
+    uni.showToast({ title: '下载失败: ' + (e.message || ''), icon: 'none' })
   }
 }
 

@@ -116,7 +116,7 @@ function exportConfig() {
   <view class="settings">
     <view class="settings__head">
       <text class="settings__title">设置</text>
-      <text class="settings__subtitle">v0.1.0 · {{ platform }}</text>
+      <text class="settings__subtitle">v0.1.5 · {{ platform }}</text>
     </view>
 
     <McCard title="启动器" glow>
@@ -225,7 +225,7 @@ function exportConfig() {
     <view class="settings__about">
       <text class="settings__about-logo">🌸</text>
       <text class="settings__about-name">樱花 MC 启动器</text>
-      <text class="settings__about-version">v0.1.0 · {{ new Date().getFullYear() }}</text>
+      <text class="settings__about-version">v0.1.5 · {{ new Date().getFullYear() }}</text>
       <text class="settings__about-desc">基于 Uniapp Vue3 + TypeScript 构建</text>
       <text class="settings__about-desc">内嵌樱花穿透 (natfrp.com) 完整功能</text>
       <text class="settings__about-desc">Powered by 💖</text>

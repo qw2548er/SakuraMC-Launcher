@@ -9,13 +9,14 @@ const accountStore = useAccountStore()
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const step = ref<'idle' | 'waiting' | 'success' | 'expired' | 'error'>('idle')
 const elapsed = ref(0)
+const errorMsg = ref('')
 
 async function startLogin() {
   step.value = 'waiting'
   elapsed.value = 0
+  errorMsg.value = ''
   try {
     await accountStore.startMicrosoftLogin()
-    // 立即开始轮询
     pollTimer.value = setInterval(async () => {
       elapsed.value += accountStore.msLoginFlow?.interval || 5
       const status = await accountStore.pollMicrosoftLogin()
@@ -26,11 +27,13 @@ async function startLogin() {
         setTimeout(() => uni.navigateBack(), 1200)
       } else if (status === 'expired' || status === 'error') {
         step.value = status
+        errorMsg.value = accountStore.msLoginError || ''
         stopPolling()
       }
     }, (accountStore.msLoginFlow?.interval || 5) * 1000)
   } catch (e: any) {
     step.value = 'error'
+    errorMsg.value = e?.message || '未知错误'
   }
 }
 
@@ -45,6 +48,7 @@ function cancel() {
   stopPolling()
   accountStore.cancelMicrosoftLogin()
   step.value = 'idle'
+  errorMsg.value = ''
 }
 
 function copyCode() {

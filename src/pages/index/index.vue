@@ -50,25 +50,20 @@ function openFrp() {
 
 function startGame() {
   if (!selectedAccount.value) {
-    uni.showToast({ title: '请先选择账号', icon: 'none' })
+    uni.navigateTo({ url: '/pages/accounts/accounts' })
+    uni.showToast({ title: '请先添加账号', icon: 'none' })
     return
   }
   if (!selectedVersion.value) {
+    uni.navigateTo({ url: '/pages/versions/versions' })
     uni.showToast({ title: '请先选择游戏版本', icon: 'none' })
     return
   }
   if (!selectedVersion.value.installed) {
-    uni.showModal({
-      title: '需要先安装',
-      content: `版本 ${selectedVersion.value.id} 还未下载, 是否前往下载?`,
-      confirmText: '去下载',
-      success: r => {
-        if (r.confirm) uni.navigateTo({ url: '/pages/versions/version-detail?id=' + selectedVersion.value.id })
-      }
-    })
+    uni.navigateTo({ url: '/pages/versions/version-detail?id=' + selectedVersion.value.id })
+    uni.showToast({ title: '请先下载游戏版本', icon: 'none' })
     return
   }
-  // 生成启动命令
   const cmd = buildLaunchCommand({
     account: selectedAccount.value,
     version: selectedVersion.value,
@@ -142,7 +137,7 @@ onMounted(() => {
           </view>
         </view>
         <view class="home__top-right">
-          <text class="home__version-tag">v0.1.0</text>
+          <text class="home__version-tag">v0.1.5</text>
         </view>
       </view>
 
