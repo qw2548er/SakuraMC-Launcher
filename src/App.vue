@@ -3,6 +3,7 @@ import { onLaunch, onShow, onHide } from '@dcloudio/uni-app'
 import { useSettingsStore } from '@/stores/settings'
 import { useAccountStore } from '@/stores/account'
 import { useFrpStore } from '@/stores/frp'
+import { initializeSakuraMC, isInitialized, markInitialized } from '@/utils/setup'
 
 onLaunch(() => {
   console.log('[App] onLaunch - 樱花 MC 启动器启动')
@@ -12,6 +13,25 @@ onLaunch(() => {
   settings.load()
   account.load()
   frp.load()
+  
+  // 初始化 SakuraMC 目录结构 (异步执行,不阻塞界面)
+  if (!isInitialized()) {
+    console.log('[App] 首次运行,开始初始化目录结构...')
+    initializeSakuraMC().then(result => {
+      console.log(`[App] 目录初始化完成: ${result.createdDirs.length} 个目录, ${result.createdFiles.length} 个文件`)
+      if (result.errors.length > 0) {
+        console.warn('[App] 初始化部分错误:', result.errors)
+      }
+      markInitialized()
+    }).catch(e => {
+      console.error('[App] 目录初始化失败:', e)
+    })
+  } else {
+    // 即使已初始化,也确保关键目录存在
+    initializeSakuraMC().catch(e => {
+      console.error('[App] 目录检查失败:', e)
+    })
+  }
   
   const firstRun = uni.getStorageSync('sakuram.firstrun.done')
   if (!firstRun) {

@@ -40,6 +40,7 @@ const navItems = [
   { id: 'server', icon: '🖥️', label: '服务器' },
   { id: 'frp', icon: '🌐', label: '穿透' },
   { id: 'controls', icon: '⌨️', label: '按键' },
+  { id: 'files', icon: '📁', label: '文件' },
   { id: 'settings', icon: '⚙️', label: '设置' }
 ]
 
@@ -88,6 +89,9 @@ function navigateTo(id: string) {
       break
     case 'controls':
       uni.navigateTo({ url: '/pages/controls/controls' })
+      break
+    case 'files':
+      uni.navigateTo({ url: '/pages/files/files' })
       break
   }
 }

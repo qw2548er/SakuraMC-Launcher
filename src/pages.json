@@ -119,6 +119,13 @@
         "navigationBarTitleText": "按键布局",
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/files/files",
+      "style": {
+        "navigationBarTitleText": "文件管理",
+        "navigationStyle": "custom"
+      }
     }
   ],
   "globalStyle": {
