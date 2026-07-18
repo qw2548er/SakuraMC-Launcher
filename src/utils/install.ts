@@ -135,21 +135,28 @@ export async function resolveVersionJson(versionId: string, source: DownloadSour
 function mergeVersionJson(parent: VersionJson, child: VersionJson): VersionJson {
   const merged: any = { ...parent, ...child }
   
-  // 合并 libraries
+  // 合并 libraries (子版本在前,父版本在后)
   const parentLibs = parent.libraries || []
   const childLibs = child.libraries || []
   merged.libraries = [...childLibs, ...parentLibs]
   
   // 合并 arguments
-  if (child.arguments && parent.arguments) {
-    merged.arguments = {
-      game: [...(child.arguments.game || []), ...(parent.arguments.game || [])],
-      jvm: [...(child.arguments.jvm || []), ...(parent.arguments.jvm || [])]
-    }
+  const parentArgs = parent.arguments || { game: [], jvm: [] }
+  const childArgs = child.arguments || { game: [], jvm: [] }
+  merged.arguments = {
+    game: [...(childArgs.game || []), ...(parentArgs.game || [])],
+    jvm: [...(childArgs.jvm || []), ...(parentArgs.jvm || [])]
   }
   
   // 子版本的 jar 优先,否则用父版本的 id
   merged.jar = child.jar || parent.id
+  
+  // assetIndex 用子版本的,没有就用父版本的
+  merged.assetIndex = child.assetIndex || parent.assetIndex
+  merged.assets = child.assets || parent.assets
+  
+  // mainClass 用子版本的
+  merged.mainClass = child.mainClass || parent.mainClass
   
   return merged as VersionJson
 }
@@ -190,7 +197,9 @@ export function getRequiredLibraries(versionJson: VersionJson, osName: string = 
   const libs: any[] = []
   const libBase = 'https://libraries.minecraft.net'
   
-  for (const lib of versionJson.libraries) {
+  const libraries = versionJson.libraries || []
+  
+  for (const lib of libraries) {
     if (!shouldIncludeLibrary(lib, osName)) continue
     
     // 主 artifact
@@ -409,69 +418,74 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
     // ===== Step 4: 下载 Assets 资源 =====
     updateStep('assets', { status: 'running', progress: 0, total: 0 })
     
-    const assetIndex = await getAssetIndex(versionJson, source)
-    const objects = Object.values(assetIndex.objects)
-    const totalAssetSize = objects.reduce((s, o) => s + o.size, 0)
-    let downloadedAssetSize = 0
-    
-    updateStep('assets', { total: totalAssetSize, progress: 0 })
-    console.log(`[Install] 需要下载 ${objects.length} 个资源文件,总大小: ${formatSize(totalAssetSize)}`)
-    
-    await ensureDir(`${assetsDir}/objects`)
-    await ensureDir(`${assetsDir}/indexes`)
-    
-    // 保存资源索引
-    const indexPath = `${assetsDir}/indexes/${versionJson.assetIndex.id}.json`
-    await writeFileIfNotExists(indexPath, JSON.stringify(assetIndex))
-    
-    const assetBase = getAssetBase(source)
-    let assetCompleted = 0
-    
-    // 限制并发下载数量
-    const concurrency = 3
-    let index = 0
-    
-    async function downloadNext() {
-      while (index < objects.length) {
-        const obj = objects[index++]
-        const hash = obj.hash
-        const subDir = hash.substring(0, 2)
-        const objPath = `${assetsDir}/objects/${subDir}/${hash}`
-        
-        const exists = await fileExistsWithSize(objPath, obj.size)
-        if (exists) {
-          assetCompleted++
-          downloadedAssetSize += obj.size
-          updateStep('assets', { progress: downloadedAssetSize, total: totalAssetSize })
-          continue
-        }
-        
-        const objUrl = `${assetBase}/${subDir}/${hash}`
-        
-        try {
-          await ensureDir(`${assetsDir}/objects/${subDir}`)
-          await downloadFile({
-            url: objUrl,
-            savePath: objPath,
-            timeout: 60000
-          })
-          assetCompleted++
-          downloadedAssetSize += obj.size
-          updateStep('assets', { progress: downloadedAssetSize, total: totalAssetSize })
-        } catch (e: any) {
-          console.warn(`[Install] 资源下载失败: ${hash}`, e.message)
+    if (!versionJson.assetIndex) {
+      console.warn('[Install] 版本没有 assetIndex,跳过资源下载')
+      updateStep('assets', { status: 'done', progress: 0, total: 0 })
+    } else {
+      const assetIndex = await getAssetIndex(versionJson, source)
+      const objects = Object.values(assetIndex.objects || {})
+      const totalAssetSize = objects.reduce((s, o) => s + o.size, 0)
+      let downloadedAssetSize = 0
+      
+      updateStep('assets', { total: totalAssetSize, progress: 0 })
+      console.log(`[Install] 需要下载 ${objects.length} 个资源文件,总大小: ${formatSize(totalAssetSize)}`)
+      
+      await ensureDir(`${assetsDir}/objects`)
+      await ensureDir(`${assetsDir}/indexes`)
+      
+      // 保存资源索引
+      const indexPath = `${assetsDir}/indexes/${versionJson.assetIndex.id}.json`
+      await writeFileIfNotExists(indexPath, JSON.stringify(assetIndex))
+      
+      const assetBase = getAssetBase(source)
+      let assetCompleted = 0
+      
+      // 限制并发下载数量
+      const concurrency = 3
+      let index = 0
+      
+      async function downloadNext() {
+        while (index < objects.length) {
+          const obj = objects[index++]
+          const hash = obj.hash
+          const subDir = hash.substring(0, 2)
+          const objPath = `${assetsDir}/objects/${subDir}/${hash}`
+          
+          const exists = await fileExistsWithSize(objPath, obj.size)
+          if (exists) {
+            assetCompleted++
+            downloadedAssetSize += obj.size
+            updateStep('assets', { progress: downloadedAssetSize, total: totalAssetSize })
+            continue
+          }
+          
+          const objUrl = `${assetBase}/${subDir}/${hash}`
+          
+          try {
+            await ensureDir(`${assetsDir}/objects/${subDir}`)
+            await downloadFile({
+              url: objUrl,
+              savePath: objPath,
+              timeout: 60000
+            })
+            assetCompleted++
+            downloadedAssetSize += obj.size
+            updateStep('assets', { progress: downloadedAssetSize, total: totalAssetSize })
+          } catch (e: any) {
+            console.warn(`[Install] 资源下载失败: ${hash}`, e.message)
+          }
         }
       }
+      
+      // 并发下载
+      const workers = []
+      for (let i = 0; i < concurrency; i++) {
+        workers.push(downloadNext())
+      }
+      await Promise.all(workers)
+      
+      updateStep('assets', { status: 'done', progress: totalAssetSize, total: totalAssetSize })
     }
-    
-    // 并发下载
-    const workers = []
-    for (let i = 0; i < concurrency; i++) {
-      workers.push(downloadNext())
-    }
-    await Promise.all(workers)
-    
-    updateStep('assets', { status: 'done', progress: totalAssetSize, total: totalAssetSize })
     
     console.log(`[Install] 版本 ${versionId} 安装完成!`)
     return true

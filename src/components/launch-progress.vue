@@ -250,7 +250,7 @@ async function startLaunch() {
     appendToTerminal('[5/6] 登录验证...')
     
     const account = accountStore.selected
-    if (account) {
+    if (account && account.name) {
       appendToTerminal(`  - 用户名: ${account.name}`)
       appendToTerminal(`  - 类型: ${account.type === 'microsoft' ? '微软正版' : account.type === 'offline' ? '离线' : account.type}`)
     } else {
