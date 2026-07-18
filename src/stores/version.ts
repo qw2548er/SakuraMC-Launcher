@@ -140,7 +140,7 @@ export const useVersionStore = defineStore('version', {
       const settings = useSettingsStore()
       const manifestVersion = this.manifest?.versions.find(v => v.id === versionId)
       if (!manifestVersion) {
-        uni.showToast({ title: '版本信息不存在', icon: 'none' })
+        uni.showToast({ title: '版本信息不存在,请刷新版本列表', icon: 'none' })
         return
       }
       const task = this.addDownload({
@@ -150,36 +150,47 @@ export const useVersionStore = defineStore('version', {
         downloaded: 0,
         status: 'downloading'
       })
+      uni.showToast({ title: '正在获取版本信息...', icon: 'none', duration: 2000 })
       try {
+        console.log('[Download] 开始下载版本:', versionId, '源:', settings.downloadSource)
+        // 确保清单已加载
+        if (!this.manifest) {
+          await this.loadManifest(true)
+        }
         const versionJson = await bmcl.getVersionJson(versionId, settings.downloadSource)
+        console.log('[Download] 版本 JSON 获取成功:', versionId)
         const client = versionJson?.downloads?.client
         if (!client?.url) {
           this.updateDownload(task.id, { status: 'error', error: '版本客户端 URL 不可用' })
-          uni.showToast({ title: '获取版本信息失败', icon: 'none' })
+          uni.showToast({ title: '获取版本下载地址失败', icon: 'none' })
           return
         }
         let clientUrl = client.url
+        // 替换为镜像源
         if (settings.downloadSource === 'bmcl') {
-          const bmclBase = bmcl.getApiBase('bmcl')
           clientUrl = clientUrl
-            .replace('https://launcher.mojang.com', bmclBase)
-            .replace('https://piston-data.mojang.com', bmclBase)
+            .replace('https://launcher.mojang.com', 'https://bmclapi2.bangbang93.com')
+            .replace('https://piston-data.mojang.com', 'https://bmclapi2.bangbang93.com')
         } else if (settings.downloadSource === 'mcbbs') {
-          const mcbbsBase = bmcl.getApiBase('mcbbs')
           clientUrl = clientUrl
-            .replace('https://launcher.mojang.com', mcbbsBase)
-            .replace('https://piston-data.mojang.com', mcbbsBase)
+            .replace('https://launcher.mojang.com', 'https://download.mcbbs.net')
+            .replace('https://piston-data.mojang.com', 'https://download.mcbbs.net')
         }
+        console.log('[Download] 客户端下载地址:', clientUrl)
         this.updateDownload(task.id, {
           url: clientUrl,
           total: client.size || 0
         })
+        uni.showToast({ title: '开始下载 Minecraft ' + versionId, icon: 'none', duration: 2000 })
         await downloadFile({
           url: clientUrl,
+          timeout: 600000,
           onProgress: (downloaded, total, speed) => {
-            this.updateDownload(task.id, { downloaded, total: total || client.size || 0, speed })
+            const realTotal = total || client.size || 0
+            this.updateDownload(task.id, { downloaded, total: realTotal, speed })
           },
           onSuccess: (path) => {
+            console.log('[Download] 下载完成,路径:', path)
             this.updateDownload(task.id, { status: 'completed', downloaded: client.size || 0, total: client.size || 0 })
             this.markInstalled({
               ...manifestVersion,
@@ -187,16 +198,18 @@ export const useVersionStore = defineStore('version', {
               installedPath: path || `./.minecraft/versions/${versionId}`,
               size: client.size
             })
-            uni.showToast({ title: '下载完成', icon: 'success' })
+            uni.showToast({ title: 'Minecraft ' + versionId + ' 下载完成', icon: 'success', duration: 3000 })
           },
           onError: (e) => {
+            console.error('[Download] 下载失败:', e.message)
             this.updateDownload(task.id, { status: 'error', error: e.message })
-            uni.showToast({ title: '下载失败: ' + e.message, icon: 'none' })
+            uni.showToast({ title: '下载失败: ' + e.message, icon: 'none', duration: 5000 })
           }
         })
       } catch (e: any) {
+        console.error('[Download] 版本下载异常:', e)
         this.updateDownload(task.id, { status: 'error', error: e.message })
-        uni.showToast({ title: '下载失败: ' + (e.message || ''), icon: 'none' })
+        uni.showToast({ title: '下载失败: ' + (e.message || '未知错误'), icon: 'none', duration: 5000 })
       }
     },
 

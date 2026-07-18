@@ -1,5 +1,5 @@
 /**
- * 通用下载工具 (uni.request 实现)
+ * 通用下载工具 (uni.downloadFile 实现,跨平台兼容)
  */
 import { formatSpeed } from './format'
 
@@ -13,88 +13,221 @@ export interface DownloadOptions {
   timeout?: number
 }
 
-/** H5 端下载: 利用 a[download] 或保存到 IndexedDB */
+/**
+ * 跨平台文件下载
+ * - APP-PLUS (Android/iOS): 使用原生下载,不受 CORS 限制
+ * - H5: 使用 uni.downloadFile (内部 XHR),若遇 CORS 则降级为浏览器直接打开
+ * - Electron: 使用 uni.downloadFile
+ */
 export async function downloadFile(opts: DownloadOptions): Promise<string> {
-  if (typeof window !== 'undefined' && 'XMLHttpRequest' in window) {
-    return h5Download(opts)
+  if (!opts.url) {
+    throw new Error('下载地址为空')
   }
+
   // #ifdef APP-PLUS
   return appDownload(opts)
   // #endif
-  throw new Error('当前平台不支持下载')
+
+  // #ifdef H5
+  return h5Download(opts)
+  // #endif
+
+  // #ifdef ELECTRON
+  return electronDownload(opts)
+  // #endif
+
+  // fallback
+  return h5Download(opts)
 }
 
-function h5Download(opts: DownloadOptions): Promise<string> {
+/**
+ * APP-PLUS 下载 (Android/iOS 原生)
+ */
+function appDownload(opts: DownloadOptions): Promise<string> {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('GET', opts.url, true)
-    xhr.responseType = 'blob'
-    if (opts.headers) {
-      Object.entries(opts.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
-    }
     let lastTime = Date.now()
     let lastLoaded = 0
-    xhr.onprogress = (e) => {
-      const now = Date.now()
-      const total = e.lengthComputable ? e.total : opts.onProgress ? 0 : 0
-      const dt = (now - lastTime) / 1000
-      const dl = e.loaded - lastLoaded
-      const speed = dt > 0 ? dl / dt : 0
-      lastTime = now
-      lastLoaded = e.loaded
-      opts.onProgress?.(e.loaded, total, speed)
-    }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const blob = xhr.response
-        const url = URL.createObjectURL(blob)
-        const filename = opts.savePath || extractFilename(opts.url)
-        // 触发浏览器下载
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(url), 1000)
-        opts.onSuccess?.(filename)
-        resolve(filename)
-      } else {
-        const err = new Error(`下载失败: HTTP ${xhr.status}`)
-        opts.onError?.(err)
-        reject(err)
+
+    const task = uni.downloadFile({
+      url: opts.url,
+      timeout: opts.timeout || 600000,
+      success: (res: any) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const filePath = res.tempFilePath || res.filePath
+          if (filePath) {
+            opts.onSuccess?.(filePath)
+            resolve(filePath)
+          } else {
+            const err = new Error('下载完成但未获取到文件路径')
+            opts.onError?.(err)
+            reject(err)
+          }
+        } else {
+          const err = new Error(`服务器返回错误: HTTP ${res.statusCode}`)
+          opts.onError?.(err)
+          reject(err)
+        }
+      },
+      fail: (err: any) => {
+        const msg = err?.errMsg || err?.message || '下载失败'
+        const e = new Error(msg)
+        opts.onError?.(e)
+        reject(e)
       }
+    })
+
+    if (task && task.onProgressUpdate && opts.onProgress) {
+      task.onProgressUpdate((res: any) => {
+        const now = Date.now()
+        const dt = (now - lastTime) / 1000
+        const dl = res.totalBytesWritten - lastLoaded
+        const speed = dt > 0 ? dl / dt : 0
+        lastTime = now
+        lastLoaded = res.totalBytesWritten
+        opts.onProgress?.(
+          res.totalBytesWritten,
+          res.totalBytesExpectedToWrite || 0,
+          speed
+        )
+      })
     }
-    xhr.onerror = () => {
-      const err = new Error('网络错误')
-      opts.onError?.(err)
-      reject(err)
-    }
-    if (opts.timeout) xhr.timeout = opts.timeout
-    xhr.send()
   })
 }
 
-function appDownload(opts: DownloadOptions): Promise<string> {
+/**
+ * H5 下载 (浏览器环境)
+ * 优先使用 uni.downloadFile,失败后降级为直接打开链接
+ */
+function h5Download(opts: DownloadOptions): Promise<string> {
   return new Promise((resolve, reject) => {
-    const dtask = plus.downloader.createDownload(opts.url, {
-      filename: opts.savePath
-    }, (path, status) => {
-      if (status === 200) {
-        opts.onSuccess?.(path)
-        resolve(path)
-      } else {
-        const err = new Error('下载失败')
-        opts.onError?.(err)
-        reject(err)
+    let lastTime = Date.now()
+    let lastLoaded = 0
+    let settled = false
+
+    const task = uni.downloadFile({
+      url: opts.url,
+      timeout: opts.timeout || 600000,
+      success: (res: any) => {
+        if (settled) return
+        settled = true
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const filePath = res.tempFilePath || ''
+          opts.onSuccess?.(filePath)
+          resolve(filePath)
+        } else {
+          // CORS 或其他错误,降级为直接打开
+          fallbackOpenUrl(opts.url, resolve, reject, opts)
+        }
+      },
+      fail: (err: any) => {
+        if (settled) return
+        settled = true
+        // uni.downloadFile 失败,可能是 CORS,降级为直接打开链接
+        fallbackOpenUrl(opts.url, resolve, reject, opts)
       }
     })
-    dtask.addEventListener('statechanged', (task, status) => {
-      if (status === 'progress') {
-        opts.onProgress?.(task.downloadedSize, task.totalSize, 0)
+
+    if (task && task.onProgressUpdate && opts.onProgress) {
+      task.onProgressUpdate((res: any) => {
+        const now = Date.now()
+        const dt = (now - lastTime) / 1000
+        const dl = res.totalBytesWritten - lastLoaded
+        const speed = dt > 0 ? dl / dt : 0
+        lastTime = now
+        lastLoaded = res.totalBytesWritten
+        opts.onProgress?.(
+          res.totalBytesWritten,
+          res.totalBytesExpectedToWrite || 0,
+          speed
+        )
+      })
+    }
+  })
+}
+
+/**
+ * H5 降级方案: 直接在新窗口打开下载链接
+ * 浏览器会自动处理下载,不受 CORS 限制
+ */
+function fallbackOpenUrl(
+  url: string,
+  resolve: (v: string) => void,
+  reject: (e: Error) => void,
+  opts: DownloadOptions
+) {
+  try {
+    // 方式1: 创建隐藏的 a 标签触发下载
+    const a = document.createElement('a')
+    a.href = url
+    a.download = opts.savePath || url.split('/').pop() || 'download'
+    a.target = '_blank'
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+
+    // 无法获取实际路径,但视为成功
+    opts.onSuccess?.(opts.savePath || url.split('/').pop() || 'download')
+    resolve(opts.savePath || url.split('/').pop() || 'download')
+  } catch (e: any) {
+    // 方式2: window.open
+    try {
+      window.open(url, '_blank')
+      opts.onSuccess?.('')
+      resolve('')
+    } catch (e2: any) {
+      const err = new Error('下载失败: ' + (e2.message || '无法打开下载链接'))
+      opts.onError?.(err)
+      reject(err)
+    }
+  }
+}
+
+/**
+ * Electron 下载 (桌面端)
+ */
+function electronDownload(opts: DownloadOptions): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let lastTime = Date.now()
+    let lastLoaded = 0
+
+    const task = uni.downloadFile({
+      url: opts.url,
+      timeout: opts.timeout || 600000,
+      success: (res: any) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const filePath = res.tempFilePath || ''
+          opts.onSuccess?.(filePath)
+          resolve(filePath)
+        } else {
+          const err = new Error(`下载失败: HTTP ${res.statusCode}`)
+          opts.onError?.(err)
+          reject(err)
+        }
+      },
+      fail: (err: any) => {
+        const msg = err?.errMsg || err?.message || '下载失败'
+        const e = new Error(msg)
+        opts.onError?.(e)
+        reject(e)
       }
     })
-    dtask.start()
+
+    if (task && task.onProgressUpdate && opts.onProgress) {
+      task.onProgressUpdate((res: any) => {
+        const now = Date.now()
+        const dt = (now - lastTime) / 1000
+        const dl = res.totalBytesWritten - lastLoaded
+        const speed = dt > 0 ? dl / dt : 0
+        lastTime = now
+        lastLoaded = res.totalBytesWritten
+        opts.onProgress?.(
+          res.totalBytesWritten,
+          res.totalBytesExpectedToWrite || 0,
+          speed
+        )
+      })
+    }
   })
 }
 

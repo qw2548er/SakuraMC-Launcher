@@ -35,16 +35,16 @@ export function getLibraryBase(source: DownloadSource): string {
 
 /** 版本清单 */
 export async function getVersionManifest(source: DownloadSource = 'bmcl') {
-  const base = getApiBase(source)
-  const url = base.includes('piston') ? `${base}/v1/products/internetsv2` : base
-  const target = source === 'mojang' ? `${MOJANG_BASE}/v1/products/internetsv2` : `${BMCL_BASE}/mc/game/version_manifest_v2.json`
+  const target = source === 'mojang'
+    ? `${MOJANG_BASE}/mc/game/version_manifest_v2.json`
+    : `${BMCL_BASE}/mc/game/version_manifest_v2.json`
   return uni.request({ url: target }).then((r: any) => r.data)
 }
 
 /** 版本清单 (v2) */
 export async function getVersionManifestV2(source: DownloadSource = 'bmcl') {
   const target = source === 'mojang'
-    ? `${MOJANG_BASE}/v1/products/internetsv2`
+    ? `${MOJANG_BASE}/mc/game/version_manifest_v2.json`
     : `${BMCL_BASE}/mc/game/version_manifest_v2.json`
   return uni.request({ url: target }).then((r: any) => r.data)
 }
