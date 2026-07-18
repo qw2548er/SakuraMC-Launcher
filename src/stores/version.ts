@@ -63,7 +63,11 @@ export const useVersionStore = defineStore('version', {
         if (ins) this.installed = JSON.parse(ins as string)
         const sel = uni.getStorageSync('sakuram.versions.selected.v1')
         if (sel) this.selectedId = sel as string
-        if (!this.selectedId && this.installed['1.21']) this.selectedId = '1.21'
+        // 如果没有选中版本,但有已安装版本,自动选择第一个
+        if (!this.selectedId) {
+          const ids = Object.keys(this.installed)
+          if (ids.length > 0) this.selectedId = ids[0]
+        }
       } catch (e) { console.warn('[Version] load failed', e) }
     },
     persistInstalled() {
@@ -208,7 +212,10 @@ export const useVersionStore = defineStore('version', {
               installedPath: path || `./.minecraft/versions/${versionId}`,
               size: client.size
             })
-            uni.showToast({ title: 'Minecraft ' + versionId + ' 下载完成', icon: 'success', duration: 3000 })
+            // 下载完成后自动选为启动版本
+            this.selectedId = versionId
+            this.persistInstalled()
+            uni.showToast({ title: 'Minecraft ' + versionId + ' 下载完成并自动选中', icon: 'success', duration: 3000 })
           },
           onError: (e) => {
             console.error('[Download] 下载失败:', e.message)

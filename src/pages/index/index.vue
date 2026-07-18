@@ -50,6 +50,7 @@ const tabs = [
 ]
 
 onShow(() => {
+  versionStore.load()
   if (!versionStore.manifest) versionStore.loadManifest()
   serverStore.pingAll()
 })
@@ -152,6 +153,7 @@ async function doCheckUpdate() {
 }
 
 onMounted(() => {
+  versionStore.load()
   versionStore.loadManifest()
   javaStore.load()
   settingsStore.load()

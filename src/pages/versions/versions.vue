@@ -11,6 +11,7 @@ const activeTab = ref<'installed' | 'download'>('installed')
 const filterType = ref<'all' | 'release' | 'snapshot'>('release')
 
 onMounted(() => {
+  versionStore.load()
   if (!versionStore.manifest) versionStore.loadManifest()
 })
 
