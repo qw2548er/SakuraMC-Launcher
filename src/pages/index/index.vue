@@ -26,6 +26,7 @@ const settingsStore = useSettingsStore()
 const javaStore = useJavaStore()
 
 const activeNav = ref('home')
+const activeTab = ref('game')
 const showLaunchModal = ref(false)
 const showCommand = ref('')
 const showUpdateModal = ref(false)
@@ -34,11 +35,18 @@ const showAnnouncement = ref(true)
 
 const navItems = [
   { id: 'home', icon: '🏠', label: '首页' },
-  { id: 'settings', icon: '🔧', label: '设置' },
-  { id: 'download', icon: '⬇️', label: '下载' },
-  { id: 'plus', icon: '➕', label: '添加' },
+  { id: 'settings', icon: '⚙️', label: '设置' },
+  { id: 'download', icon: '📦', label: '下载' },
+  { id: 'mods', icon: '🧩', label: '模组' },
   { id: 'frp', icon: '🌐', label: '穿透' },
-  { id: 'about', icon: '⚙️', label: '关于' }
+  { id: 'account', icon: '👤', label: '账号' }
+]
+
+const tabs = [
+  { id: 'game', label: '游戏设置' },
+  { id: 'version', label: '管理版本' },
+  { id: 'auto', label: '自动安装' },
+  { id: 'custom', label: '自定义' }
 ]
 
 onShow(() => {
@@ -59,19 +67,19 @@ function navigateTo(id: string) {
     case 'home':
       break
     case 'settings':
-      uni.switchTab({ url: '/pages/settings/settings' })
+      activeTab.value = 'game'
       break
     case 'download':
       uni.navigateTo({ url: '/pages/versions/versions' })
       break
-    case 'plus':
-      uni.showToast({ title: '未开发', icon: 'none' })
+    case 'mods':
+      uni.navigateTo({ url: '/pages/mods/mods' })
       break
     case 'frp':
       uni.switchTab({ url: '/pages/frp/frp' })
       break
-    case 'about':
-      uni.switchTab({ url: '/pages/settings/settings' })
+    case 'account':
+      uni.navigateTo({ url: '/pages/accounts/accounts' })
       break
   }
 }
@@ -89,7 +97,8 @@ function openFrp() {
   uni.switchTab({ url: '/pages/frp/frp' })
 }
 function openSettings() {
-  uni.switchTab({ url: '/pages/settings/settings' })
+  activeNav.value = 'settings'
+  activeTab.value = 'game'
 }
 function openMods() {
   uni.navigateTo({ url: '/pages/mods/mods' })
@@ -194,11 +203,13 @@ onMounted(() => {
     <UpdateModal v-model:show="showUpdateModal" :update="latestUpdate" @ignore="ignoreUpdate" />
     
     <view class="home__bg">
+      <view class="home__bg-image" />
       <view class="home__bg-overlay" />
     </view>
     
     <view class="home__layout">
       <view class="home__sidebar">
+        <view class="sidebar-logo">🌸</view>
         <view class="sidebar-list">
           <view
             v-for="item in navItems"
@@ -210,66 +221,95 @@ onMounted(() => {
             <text class="sidebar-item__icon">{{ item.icon }}</text>
           </view>
         </view>
+        <view class="sidebar-spacer" />
+        <view class="sidebar-item sidebar-item--bottom" @tap="openSettings">
+          <text class="sidebar-item__icon">⚙️</text>
+        </view>
       </view>
       
       <view class="home__main">
-        <view v-if="showAnnouncement" class="home__announcement">
-          <view class="announcement-content">
+        <view v-if="showAnnouncement && activeNav === 'home'" class="home__announcement">
+          <view class="announcement-header">
             <text class="announcement__title">📢 公告：关于 v0.2.0</text>
-            <text class="announcement__text">樱花 MC 启动器 v0.2.0 发布啦！全新界面设计，内置 Java 运行环境，新增樱花穿透功能，点击查看更多更新内容。</text>
+            <view class="announcement__close" @tap="showAnnouncement = false">不再显示</view>
           </view>
-          <view class="announcement__close" @tap="showAnnouncement = false">✕</view>
+          <text class="announcement__text">樱花 MC 启动器 v0.2.0 发布啦！全新界面设计，内置 Java 运行环境，新增樱花穿透功能，点击查看更多更新内容。</text>
         </view>
         
-        <view class="home__content">
-          <view class="home__section">
-            <text class="home__section-title">快速访问</text>
-            <view class="quick-grid">
-              <view class="quick-tile" @tap="chooseAccount">
-                <view class="quick-tile__icon">👤</view>
-                <text class="quick-tile__label">账号</text>
-                <text class="quick-tile__sub">{{ accountStore.accounts.length }} 个</text>
-              </view>
-              <view class="quick-tile" @tap="chooseVersion">
-                <view class="quick-tile__icon">📦</view>
-                <text class="quick-tile__label">版本</text>
-                <text class="quick-tile__sub">{{ Object.keys(versionStore.installed).length }} 已装</text>
-              </view>
-              <view class="quick-tile" @tap="openMods">
-                <view class="quick-tile__icon">🧩</view>
-                <text class="quick-tile__label">模组</text>
-                <text class="quick-tile__sub">Mods</text>
-              </view>
-              <view class="quick-tile" @tap="openFrp">
-                <view class="quick-tile__icon">🌐</view>
-                <text class="quick-tile__label">穿透</text>
-                <text class="quick-tile__sub">{{ frpStatus }}</text>
+        <view v-if="activeNav === 'home'" class="home__content">
+          <view class="panel">
+            <view class="panel__header">
+              <text class="panel__title">快速访问</text>
+            </view>
+            <view class="panel__body">
+              <view class="quick-grid">
+                <view class="quick-tile" @tap="chooseAccount">
+                  <view class="quick-tile__icon">👤</view>
+                  <view class="quick-tile__info">
+                    <text class="quick-tile__label">账号</text>
+                    <text class="quick-tile__sub">{{ accountStore.accounts.length }} 个账号</text>
+                  </view>
+                </view>
+                <view class="quick-tile" @tap="chooseVersion">
+                  <view class="quick-tile__icon">📦</view>
+                  <view class="quick-tile__info">
+                    <text class="quick-tile__label">版本</text>
+                    <text class="quick-tile__sub">{{ Object.keys(versionStore.installed).length }} 已安装</text>
+                  </view>
+                </view>
+                <view class="quick-tile" @tap="openMods">
+                  <view class="quick-tile__icon">🧩</view>
+                  <view class="quick-tile__info">
+                    <text class="quick-tile__label">模组</text>
+                    <text class="quick-tile__sub">模组管理</text>
+                  </view>
+                </view>
+                <view class="quick-tile" @tap="openFrp">
+                  <view class="quick-tile__icon">🌐</view>
+                  <view class="quick-tile__info">
+                    <text class="quick-tile__label">穿透</text>
+                    <text class="quick-tile__sub">{{ frpStatus }}</text>
+                  </view>
+                </view>
               </view>
             </view>
           </view>
           
-          <view v-if="activeDownloads.length" class="home__section">
-            <view class="home__section-header">
-              <text class="home__section-title">下载任务 ({{ activeDownloads.length }})</text>
-              <text class="home__section-link" @tap="chooseVersion">查看全部</text>
+          <view v-if="activeDownloads.length" class="panel">
+            <view class="panel__header">
+              <text class="panel__title">下载任务</text>
+              <text class="panel__action" @tap="chooseVersion">{{ activeDownloads.length }} 个进行中</text>
             </view>
-            <view v-for="d in activeDownloads" :key="d.id" class="download-item">
-              <view class="download-item__head">
-                <text class="download-item__name">{{ d.name }}</text>
-                <text class="download-item__pct">{{ Math.floor(d.downloaded / Math.max(d.total, 1) * 100) }}%</text>
+            <view class="panel__body">
+              <view v-for="d in activeDownloads" :key="d.id" class="download-item">
+                <view class="download-item__head">
+                  <text class="download-item__name">{{ d.name }}</text>
+                  <text class="download-item__pct">{{ Math.floor(d.downloaded / Math.max(d.total, 1) * 100) }}%</text>
+                </view>
+                <view class="download-item__bar">
+                  <view class="download-item__fill" :style="{ width: (d.downloaded / Math.max(d.total, 1) * 100) + '%' }" />
+                </view>
+                <text class="download-item__sub">{{ formatBytes(d.downloaded) }} / {{ formatBytes(d.total) }}</text>
               </view>
-              <view class="download-item__bar">
-                <view class="download-item__fill" :style="{ width: (d.downloaded / Math.max(d.total, 1) * 100) + '%' }" />
-              </view>
-              <text class="download-item__sub">{{ formatBytes(d.downloaded) }} / {{ formatBytes(d.total) }}</text>
             </view>
           </view>
-          
-          <view class="home__section">
-            <view class="home__section-header">
-              <text class="home__section-title">游戏设置</text>
+        </view>
+        
+        <view v-if="activeNav === 'settings'" class="home__content">
+          <view class="panel">
+            <view class="panel__tabs">
+              <view
+                v-for="tab in tabs"
+                :key="tab.id"
+                class="panel__tab"
+                :class="{ 'panel__tab--active': activeTab === tab.id }"
+                @tap="activeTab = tab.id"
+              >
+                <text>{{ tab.label }}</text>
+              </view>
             </view>
-            <McCard>
+            
+            <view v-if="activeTab === 'game'" class="panel__body">
               <view class="setting-row" @tap="chooseAccount">
                 <view class="setting-row__main">
                   <text class="setting-row__label">当前账号</text>
@@ -286,76 +326,74 @@ onMounted(() => {
               </view>
               <view class="setting-row" @tap="openSettings">
                 <view class="setting-row__main">
-                  <text class="setting-row__label">Java 版本</text>
-                  <text class="setting-row__value">{{ selectedJava?.name || '未配置' }} · 自动选择</text>
+                  <text class="setting-row__label">Java 路径</text>
+                  <text class="setting-row__value">{{ selectedJava?.name || '自动选择' }}</text>
                 </view>
                 <text class="setting-row__arrow">›</text>
               </view>
-              <view class="setting-row" @tap="openSettings">
+              <view class="setting-row">
                 <view class="setting-row__main">
-                  <text class="setting-row__label">内存分配</text>
-                  <text class="setting-row__value">最小 {{ formatBytes(settingsStore.minMemory * 1024 * 1024) }} · 最大 {{ formatBytes(settingsStore.maxMemory * 1024 * 1024) }}</text>
+                  <text class="setting-row__label">最大内存</text>
+                  <text class="setting-row__value">{{ settingsStore.maxMemory }} MB</text>
                 </view>
                 <text class="setting-row__arrow">›</text>
               </view>
-            </McCard>
-          </view>
-          
-          <view v-if="frpStore.isLoggedIn" class="home__section">
-            <view class="home__section-header">
-              <text class="home__section-title">樱花穿透</text>
-              <text class="home__section-link" @tap="openFrp">详情</text>
+              <view class="setting-row">
+                <view class="setting-row__main">
+                  <text class="setting-row__label">最小内存</text>
+                  <text class="setting-row__value">{{ settingsStore.minMemory }} MB</text>
+                </view>
+                <text class="setting-row__arrow">›</text>
+              </view>
+              <view class="setting-row">
+                <view class="setting-row__main">
+                  <text class="setting-row__label">窗口大小</text>
+                  <text class="setting-row__value">854 x 480</text>
+                </view>
+                <text class="setting-row__arrow">›</text>
+              </view>
             </view>
-            <McCard>
-              <view class="frp-stat">
-                <text class="frp-stat__label">账号</text>
-                <text class="frp-stat__value">{{ frpStore.account?.userInfo?.username || frpStore.account?.username }}</text>
-              </view>
-              <view v-if="frpStore.traffic" class="frp-stat">
-                <text class="frp-stat__label">流量</text>
-                <text class="frp-stat__value">{{ formatBytes(frpStore.traffic.used) }} / {{ formatBytes(frpStore.traffic.total) }}</text>
-              </view>
-              <view class="frp-stat">
-                <text class="frp-stat__label">活跃隧道</text>
-                <text class="frp-stat__value">{{ frpStore.onlineTunnels.length }} / {{ frpStore.tunnels.length }}</text>
-              </view>
-            </McCard>
+            
+            <view v-else class="panel__body panel__body--empty">
+              <NotDeveloped feature="该设置页" />
+            </view>
           </view>
         </view>
       </view>
       
       <view class="home__right">
-        <view class="player-info">
-          <view class="player-info__avatar" @tap="chooseAccount">
-            <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="120" variant="head" />
-            <view v-else class="player-info__avatar-placeholder">
+        <view class="player-card">
+          <view class="player-card__avatar" @tap="chooseAccount">
+            <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="100" variant="head" />
+            <view v-else class="player-card__avatar-placeholder">
               <text>👤</text>
             </view>
           </view>
-          <text class="player-info__name">{{ selectedAccount?.username || '微软账户' }}</text>
-          <text class="player-info__hint" @tap="chooseAccount">点击切换账号</text>
+          <view class="player-card__info">
+            <text class="player-card__name">{{ selectedAccount?.username || '微软账户' }}</text>
+            <text class="player-card__type" @tap="chooseAccount">点击切换账号</text>
+          </view>
         </view>
         
-        <view class="launch-section">
+        <view class="launch-card">
           <NotDeveloped variant="banner" feature="游戏启动" plan="v0.2.0" />
           <McButton size="lg" glow block @click="startGame" class="launch-btn">
             🎮 启动游戏
           </McButton>
-          <view class="launch-version" @tap="chooseVersion">
-            <view class="launch-version__icon">⛏️</view>
-            <view class="launch-version__info">
-              <text class="launch-version__name">{{ selectedVersion?.id || '未选择版本' }}</text>
-              <text class="launch-version__type">{{ selectedVersion?.type || '点击选择版本' }}</text>
+          
+          <view class="version-selector" @tap="chooseVersion">
+            <view class="version-selector__icon">⛏️</view>
+            <view class="version-selector__info">
+              <text class="version-selector__name">{{ selectedVersion?.id || '未选择版本' }}</text>
+              <text class="version-selector__type">{{ selectedVersion?.type || '点击选择游戏版本' }}</text>
             </view>
-            <text class="launch-version__gear" @tap.stop="openSettings">⚙️</text>
+            <text class="version-selector__arrow">›</text>
           </view>
-          <view class="launch-actions">
-            <view class="launch-action" @tap="chooseVersion">
-              <text class="launch-action__text">管理版本</text>
-            </view>
-            <view class="launch-action" @tap="openMods">
-              <text class="launch-action__text">模组管理</text>
-            </view>
+          
+          <view class="launch-links">
+            <text class="launch-link" @tap="chooseVersion">管理版本</text>
+            <text class="launch-link" @tap="openMods">模组管理</text>
+            <text class="launch-link" @tap="openSettings">游戏设置</text>
           </view>
         </view>
       </view>
@@ -392,14 +430,21 @@ onMounted(() => {
   &__bg {
     position: fixed;
     inset: 0;
-    background: linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 50%, #1a0f2e 100%);
+    
+    &-image {
+      position: absolute;
+      inset: 0;
+      background: 
+        linear-gradient(135deg, rgba(255, 183, 213, 0.15) 0%, rgba(255, 143, 171, 0.1) 50%, rgba(200, 130, 255, 0.15) 100%),
+        linear-gradient(180deg, #1a0a14 0%, #2d1520 30%, #1f0d18 100%);
+    }
     
     &-overlay {
       position: absolute;
       inset: 0;
       background: 
-        radial-gradient(circle at 30% 20%, rgba(255, 183, 213, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 70% 80%, rgba(216, 150, 255, 0.1) 0%, transparent 50%);
+        radial-gradient(ellipse at 30% 20%, rgba(255, 183, 213, 0.12) 0%, transparent 55%),
+        radial-gradient(ellipse at 75% 85%, rgba(200, 130, 255, 0.1) 0%, transparent 50%);
     }
   }
   
@@ -411,15 +456,16 @@ onMounted(() => {
   }
   
   &__sidebar {
-    width: 100rpx;
+    width: 80rpx;
     flex-shrink: 0;
-    background: rgba(26, 15, 46, 0.8);
+    background: rgba(30, 12, 22, 0.75);
     backdrop-filter: blur(20px);
-    border-right: 2rpx solid rgba(216, 150, 255, 0.15);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 2rpx solid rgba(255, 183, 213, 0.15);
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 32rpx 0;
+    padding: 24rpx 0;
     position: fixed;
     left: 0;
     top: 0;
@@ -429,66 +475,47 @@ onMounted(() => {
   
   &__main {
     flex: 1;
-    margin-left: 100rpx;
-    margin-right: 320rpx;
-    padding: 24rpx 32rpx 32rpx;
+    margin-left: 80rpx;
+    margin-right: 340rpx;
+    padding: 28rpx 32rpx 32rpx;
     min-height: 100vh;
     overflow-y: auto;
   }
   
   &__right {
-    width: 320rpx;
+    width: 340rpx;
     flex-shrink: 0;
     position: fixed;
     right: 0;
     top: 0;
     bottom: 0;
-    background: rgba(26, 15, 46, 0.6);
-    backdrop-filter: blur(20px);
-    border-left: 2rpx solid rgba(216, 150, 255, 0.1);
     display: flex;
     flex-direction: column;
-    padding: 40rpx 24rpx 32rpx;
+    padding: 28rpx 24rpx 32rpx;
+    gap: 20rpx;
     z-index: 10;
   }
   
   &__announcement {
-    background: rgba(255, 183, 213, 0.15);
-    border: 2rpx solid rgba(255, 183, 213, 0.3);
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 2rpx solid rgba(255, 183, 213, 0.25);
     border-radius: 16rpx;
     padding: 20rpx 24rpx;
     margin-bottom: 24rpx;
+  }
+  
+  &__content {
     display: flex;
-    align-items: flex-start;
-    gap: 16rpx;
-  }
-  
-  &__section {
-    margin-bottom: 28rpx;
-  }
-  
-  &__section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16rpx;
-  }
-  
-  &__section-title {
-    font-size: 28rpx;
-    font-weight: 700;
-    color: #ffffff;
-  }
-  
-  &__section-link {
-    font-size: 24rpx;
-    color: #ffb7d5;
+    flex-direction: column;
+    gap: 20rpx;
   }
   
   &__modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.6);
     z-index: 999;
     display: flex;
     align-items: center;
@@ -497,9 +524,11 @@ onMounted(() => {
   }
   
   &__modal-panel {
-    background: #1a0f2e;
-    border: 2rpx solid rgba(216, 150, 255, 0.2);
-    border-radius: 32rpx;
+    background: rgba(30, 12, 22, 0.95);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 2rpx solid rgba(255, 183, 213, 0.25);
+    border-radius: 20rpx;
     max-width: 720rpx;
     width: 100%;
     max-height: 85vh;
@@ -513,18 +542,18 @@ onMounted(() => {
     justify-content: space-between;
     align-items: center;
     padding: 24rpx 32rpx;
-    border-bottom: 2rpx solid rgba(216, 150, 255, 0.1);
+    border-bottom: 2rpx solid rgba(255, 183, 213, 0.15);
   }
   
   &__modal-title {
     font-size: 32rpx;
-    font-weight: 700;
-    color: #ffffff;
+    font-weight: 600;
+    color: #fff;
   }
   
   &__modal-close {
     font-size: 32rpx;
-    color: #b8a8d4;
+    color: rgba(255, 255, 255, 0.5);
     padding: 8rpx 16rpx;
   }
   
@@ -536,23 +565,23 @@ onMounted(() => {
   &__modal-tip {
     display: block;
     font-size: 24rpx;
-    color: #b8a8d4;
+    color: rgba(255, 255, 255, 0.6);
     margin-bottom: 16rpx;
     line-height: 1.6;
   }
   
   &__modal-cmd-box {
-    background: #0f0f1a;
+    background: rgba(0, 0, 0, 0.4);
     padding: 24rpx;
-    border-radius: 16rpx;
-    border: 2rpx solid rgba(216, 150, 255, 0.1);
+    border-radius: 12rpx;
+    border: 2rpx solid rgba(255, 183, 213, 0.15);
     max-height: 360rpx;
     overflow-y: auto;
   }
   
   &__modal-cmd {
     font-size: 22rpx;
-    color: #b8a8d4;
+    color: rgba(255, 255, 255, 0.7);
     font-family: monospace;
     word-break: break-all;
     line-height: 1.6;
@@ -566,125 +595,256 @@ onMounted(() => {
   }
 }
 
+.sidebar-logo {
+  font-size: 40rpx;
+  margin-bottom: 24rpx;
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(255, 183, 213, 0.3), rgba(255, 143, 171, 0.3));
+  border-radius: 16rpx;
+}
+
 .sidebar-list {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 8rpx;
   width: 100%;
   align-items: center;
 }
 
+.sidebar-spacer {
+  flex: 1;
+}
+
 .sidebar-item {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 16rpx;
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 14rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
   
   &--active {
-    background: linear-gradient(135deg, rgba(255, 183, 213, 0.3), rgba(216, 150, 255, 0.3));
-    box-shadow: 0 0 20rpx rgba(255, 183, 213, 0.3);
+    background: linear-gradient(135deg, rgba(255, 183, 213, 0.35), rgba(255, 143, 171, 0.35));
+    box-shadow: 0 4rpx 16rpx rgba(255, 143, 171, 0.3);
   }
   
   &__icon {
-    font-size: 32rpx;
+    font-size: 28rpx;
+  }
+  
+  &--bottom {
+    margin-top: auto;
   }
 }
 
-.announcement-content {
-  flex: 1;
-  min-width: 0;
+.announcement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
 }
 
 .announcement__title {
-  display: block;
   font-size: 26rpx;
-  font-weight: 700;
+  font-weight: 600;
   color: #ffb7d5;
-  margin-bottom: 8rpx;
 }
 
 .announcement__text {
   display: block;
   font-size: 24rpx;
-  color: #b8a8d4;
-  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.6;
 }
 
 .announcement__close {
-  font-size: 24rpx;
-  color: #6a5a8a;
-  padding: 4rpx 12rpx;
-  flex-shrink: 0;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 6rpx 16rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 2rpx solid rgba(255, 183, 213, 0.2);
+  border-radius: 18rpx;
+  overflow: hidden;
+  
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20rpx 24rpx;
+    border-bottom: 2rpx solid rgba(255, 183, 213, 0.12);
+  }
+  
+  &__title {
+    font-size: 28rpx;
+    font-weight: 600;
+    color: #fff;
+  }
+  
+  &__action {
+    font-size: 22rpx;
+    color: #ffb7d5;
+  }
+  
+  &__body {
+    padding: 20rpx 24rpx;
+  }
+  
+  &__body--empty {
+    padding: 60rpx 24rpx;
+  }
+  
+  &__tabs {
+    display: flex;
+    padding: 0 16rpx;
+    border-bottom: 2rpx solid rgba(255, 183, 213, 0.12);
+    gap: 8rpx;
+  }
+  
+  &__tab {
+    padding: 18rpx 20rpx;
+    font-size: 24rpx;
+    color: rgba(255, 255, 255, 0.5);
+    position: relative;
+    transition: all 0.2s;
+    
+    text {
+      color: inherit;
+    }
+    
+    &--active {
+      color: #ffb7d5;
+      font-weight: 600;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 20rpx;
+        right: 20rpx;
+        height: 4rpx;
+        background: linear-gradient(90deg, #ffb7d5, #ff8fab);
+        border-radius: 2rpx;
+      }
+    }
+  }
 }
 
 .quick-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 16rpx;
 }
 
 .quick-tile {
-  background: rgba(45, 27, 78, 0.6);
-  border: 2rpx solid rgba(216, 150, 255, 0.15);
-  border-radius: 20rpx;
-  padding: 24rpx 12rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2rpx solid rgba(255, 183, 213, 0.15);
+  border-radius: 14rpx;
+  padding: 20rpx;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8rpx;
+  gap: 16rpx;
+  transition: all 0.2s;
   
-  &__icon { font-size: 48rpx; }
-  &__label { font-size: 24rpx; color: #ffffff; font-weight: 600; }
-  &__sub { font-size: 20rpx; color: #6a5a8a; }
+  &:active {
+    background: rgba(255, 183, 213, 0.15);
+    transform: scale(0.98);
+  }
+  
+  &__icon {
+    width: 64rpx;
+    height: 64rpx;
+    border-radius: 12rpx;
+    background: linear-gradient(135deg, rgba(255, 183, 213, 0.3), rgba(255, 143, 171, 0.3));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32rpx;
+    flex-shrink: 0;
+  }
+  
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  &__label {
+    display: block;
+    font-size: 26rpx;
+    color: #fff;
+    font-weight: 600;
+    margin-bottom: 4rpx;
+  }
+  
+  &__sub {
+    display: block;
+    font-size: 22rpx;
+    color: rgba(255, 255, 255, 0.5);
+  }
 }
 
 .download-item {
-  background: rgba(45, 27, 78, 0.6);
-  border: 2rpx solid rgba(216, 150, 255, 0.1);
-  border-radius: 16rpx;
-  padding: 20rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2rpx solid rgba(255, 183, 213, 0.1);
+  border-radius: 12rpx;
+  padding: 16rpx;
   margin-bottom: 12rpx;
   
-  &__head { display: flex; justify-content: space-between; margin-bottom: 12rpx; }
-  &__name { font-size: 26rpx; color: #ffffff; font-weight: 600; }
-  &__pct { font-size: 24rpx; color: #d896ff; font-weight: 700; }
-  &__bar { height: 8rpx; background: rgba(106, 90, 138, 0.3); border-radius: 4rpx; overflow: hidden; }
-  &__fill { height: 100%; background: linear-gradient(90deg, #ffb7d5, #d896ff); border-radius: 4rpx; transition: width 0.3s; }
-  &__sub { display: block; font-size: 22rpx; color: #6a5a8a; margin-top: 8rpx; }
+  &:last-child { margin-bottom: 0; }
+  
+  &__head { display: flex; justify-content: space-between; margin-bottom: 10rpx; }
+  &__name { font-size: 24rpx; color: #fff; font-weight: 500; }
+  &__pct { font-size: 22rpx; color: #ffb7d5; font-weight: 600; }
+  &__bar { height: 8rpx; background: rgba(255, 255, 255, 0.1); border-radius: 4rpx; overflow: hidden; }
+  &__fill { height: 100%; background: linear-gradient(90deg, #ffb7d5, #ff8fab); border-radius: 4rpx; transition: width 0.3s; }
+  &__sub { display: block; font-size: 20rpx; color: rgba(255, 255, 255, 0.4); margin-top: 8rpx; }
 }
 
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20rpx 0;
-  border-bottom: 2rpx solid rgba(216, 150, 255, 0.08);
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid rgba(255, 183, 213, 0.08);
   
   &:last-child { border-bottom: none; }
   
   &__main { flex: 1; min-width: 0; }
-  &__label { font-size: 24rpx; color: #b8a8d4; display: block; }
-  &__value { font-size: 28rpx; color: #ffffff; font-weight: 600; display: block; margin-top: 4rpx; }
-  &__arrow { font-size: 32rpx; color: #6a5a8a; flex-shrink: 0; }
+  &__label { font-size: 24rpx; color: rgba(255, 255, 255, 0.6); display: block; }
+  &__value { font-size: 26rpx; color: #fff; font-weight: 500; display: block; margin-top: 4rpx; }
+  &__arrow { font-size: 32rpx; color: rgba(255, 255, 255, 0.3); flex-shrink: 0; }
 }
 
-.player-info {
+.player-card {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 2rpx solid rgba(255, 183, 213, 0.2);
+  border-radius: 18rpx;
+  padding: 20rpx;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  margin-bottom: 32rpx;
+  gap: 16rpx;
   
   &__avatar {
-    width: 120rpx;
-    height: 120rpx;
+    width: 80rpx;
+    height: 80rpx;
     border-radius: 50%;
     overflow: hidden;
-    border: 4rpx solid rgba(255, 183, 213, 0.5);
-    margin-bottom: 16rpx;
-    box-shadow: 0 0 30rpx rgba(255, 183, 213, 0.3);
+    border: 3rpx solid rgba(255, 183, 213, 0.5);
+    flex-shrink: 0;
+    box-shadow: 0 4rpx 16rpx rgba(255, 143, 171, 0.3);
     
     image {
       width: 100%;
@@ -695,48 +855,64 @@ onMounted(() => {
   &__avatar-placeholder {
     width: 100%;
     height: 100%;
-    background: rgba(45, 27, 78, 0.8);
+    background: rgba(255, 183, 213, 0.2);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 48rpx;
+    font-size: 36rpx;
+  }
+  
+  &__info {
+    flex: 1;
+    min-width: 0;
   }
   
   &__name {
-    font-size: 30rpx;
-    font-weight: 700;
-    color: #ffb7d5;
+    display: block;
+    font-size: 28rpx;
+    font-weight: 600;
+    color: #fff;
     margin-bottom: 4rpx;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   
-  &__hint {
+  &__type {
+    display: block;
     font-size: 22rpx;
-    color: #6a5a8a;
+    color: rgba(255, 255, 255, 0.5);
   }
 }
 
-.launch-section {
-  flex: 1;
+.launch-card {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 2rpx solid rgba(255, 183, 213, 0.2);
+  border-radius: 18rpx;
+  padding: 20rpx;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
+  flex: 1;
 }
 
 .launch-btn {
-  margin-bottom: 8rpx !important;
+  margin-bottom: 4rpx !important;
 }
 
-.launch-version {
+.version-selector {
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  background: rgba(45, 27, 78, 0.6);
-  border: 2rpx solid rgba(216, 150, 255, 0.2);
-  border-radius: 16rpx;
-  padding: 16rpx 20rpx;
+  gap: 14rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2rpx solid rgba(255, 183, 213, 0.15);
+  border-radius: 14rpx;
+  padding: 14rpx 16rpx;
   
   &__icon {
-    font-size: 36rpx;
+    font-size: 32rpx;
     flex-shrink: 0;
   }
   
@@ -747,9 +923,9 @@ onMounted(() => {
   
   &__name {
     display: block;
-    font-size: 26rpx;
+    font-size: 24rpx;
     font-weight: 600;
-    color: #ffffff;
+    color: #fff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -758,46 +934,31 @@ onMounted(() => {
   &__type {
     display: block;
     font-size: 20rpx;
-    color: #6a5a8a;
+    color: rgba(255, 255, 255, 0.5);
     margin-top: 2rpx;
   }
   
-  &__gear {
+  &__arrow {
     font-size: 28rpx;
+    color: rgba(255, 255, 255, 0.3);
     flex-shrink: 0;
-    padding: 8rpx;
   }
 }
 
-.launch-actions {
+.launch-links {
   display: flex;
-  gap: 12rpx;
+  flex-direction: column;
+  gap: 4rpx;
+  margin-top: 8rpx;
 }
 
-.launch-action {
-  flex: 1;
-  background: rgba(45, 27, 78, 0.4);
-  border: 2rpx solid rgba(216, 150, 255, 0.15);
-  border-radius: 12rpx;
-  padding: 16rpx;
-  text-align: center;
+.launch-link {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 10rpx 4rpx;
   
-  &__text {
-    font-size: 22rpx;
-    color: #b8a8d4;
+  &:active {
+    color: #ffb7d5;
   }
-}
-
-.frp-stat {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16rpx 0;
-  border-bottom: 2rpx solid rgba(216, 150, 255, 0.08);
-  
-  &:last-child { border-bottom: none; }
-  
-  &__label { font-size: 26rpx; color: #b8a8d4; }
-  &__value { font-size: 26rpx; color: #ffffff; font-weight: 600; }
 }
 </style>
