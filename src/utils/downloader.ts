@@ -13,12 +13,6 @@ export interface DownloadOptions {
   timeout?: number
 }
 
-/**
- * 跨平台文件下载
- * - APP-PLUS (Android/iOS): 使用原生下载,不受 CORS 限制
- * - H5: 使用 uni.downloadFile (内部 XHR),若遇 CORS 则降级为浏览器直接打开
- * - Electron: 使用 uni.downloadFile
- */
 export async function downloadFile(opts: DownloadOptions): Promise<string> {
   if (!opts.url) {
     throw new Error('下载地址为空')
@@ -36,13 +30,9 @@ export async function downloadFile(opts: DownloadOptions): Promise<string> {
   return electronDownload(opts)
   // #endif
 
-  // fallback
   return h5Download(opts)
 }
 
-/**
- * APP-PLUS 下载 (Android/iOS 原生)
- */
 function appDownload(opts: DownloadOptions): Promise<string> {
   return new Promise((resolve, reject) => {
     let lastTime = Date.now()
@@ -51,12 +41,23 @@ function appDownload(opts: DownloadOptions): Promise<string> {
     const task = uni.downloadFile({
       url: opts.url,
       timeout: opts.timeout || 600000,
+      filePath: opts.savePath,
       success: (res: any) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          const filePath = res.tempFilePath || res.filePath
+          const filePath = res.filePath || res.tempFilePath
           if (filePath) {
-            opts.onSuccess?.(filePath)
-            resolve(filePath)
+            if (opts.savePath && filePath !== opts.savePath) {
+              copyFileToExternalStorage(filePath, opts.savePath).then(() => {
+                opts.onSuccess?.(opts.savePath!)
+                resolve(opts.savePath!)
+              }).catch(e => {
+                opts.onError?.(e)
+                reject(e)
+              })
+            } else {
+              opts.onSuccess?.(filePath)
+              resolve(filePath)
+            }
           } else {
             const err = new Error('下载完成但未获取到文件路径')
             opts.onError?.(err)
@@ -94,10 +95,40 @@ function appDownload(opts: DownloadOptions): Promise<string> {
   })
 }
 
-/**
- * H5 下载 (浏览器环境)
- * 优先使用 uni.downloadFile,失败后降级为直接打开链接
- */
+async function copyFileToExternalStorage(srcPath: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const fileSystem = plus.io.getFileSystemManager()
+    const destDir = destPath.substring(0, destPath.lastIndexOf('/'))
+    
+    fileSystem.access({
+      path: destDir,
+      success: () => {
+        fileSystem.copyFile({
+          srcPath,
+          destPath,
+          success: () => resolve(),
+          fail: (e: any) => reject(new Error(`复制文件失败: ${e.message}`))
+        })
+      },
+      fail: () => {
+        fileSystem.mkdir({
+          dirPath: destDir,
+          recursive: true,
+          success: () => {
+            fileSystem.copyFile({
+              srcPath,
+              destPath,
+              success: () => resolve(),
+              fail: (e: any) => reject(new Error(`复制文件失败: ${e.message}`))
+            })
+          },
+          fail: (e: any) => reject(new Error(`创建目录失败: ${e.message}`))
+        })
+      }
+    })
+  })
+}
+
 function h5Download(opts: DownloadOptions): Promise<string> {
   return new Promise((resolve, reject) => {
     let lastTime = Date.now()
@@ -115,14 +146,12 @@ function h5Download(opts: DownloadOptions): Promise<string> {
           opts.onSuccess?.(filePath)
           resolve(filePath)
         } else {
-          // CORS 或其他错误,降级为直接打开
           fallbackOpenUrl(opts.url, resolve, reject, opts)
         }
       },
       fail: (err: any) => {
         if (settled) return
         settled = true
-        // uni.downloadFile 失败,可能是 CORS,降级为直接打开链接
         fallbackOpenUrl(opts.url, resolve, reject, opts)
       }
     })
@@ -145,10 +174,6 @@ function h5Download(opts: DownloadOptions): Promise<string> {
   })
 }
 
-/**
- * H5 降级方案: 直接在新窗口打开下载链接
- * 浏览器会自动处理下载,不受 CORS 限制
- */
 function fallbackOpenUrl(
   url: string,
   resolve: (v: string) => void,
@@ -156,7 +181,6 @@ function fallbackOpenUrl(
   opts: DownloadOptions
 ) {
   try {
-    // 方式1: 创建隐藏的 a 标签触发下载
     const a = document.createElement('a')
     a.href = url
     a.download = opts.savePath || url.split('/').pop() || 'download'
@@ -165,12 +189,9 @@ function fallbackOpenUrl(
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-
-    // 无法获取实际路径,但视为成功
     opts.onSuccess?.(opts.savePath || url.split('/').pop() || 'download')
     resolve(opts.savePath || url.split('/').pop() || 'download')
   } catch (e: any) {
-    // 方式2: window.open
     try {
       window.open(url, '_blank')
       opts.onSuccess?.('')
@@ -183,9 +204,6 @@ function fallbackOpenUrl(
   }
 }
 
-/**
- * Electron 下载 (桌面端)
- */
 function electronDownload(opts: DownloadOptions): Promise<string> {
   return new Promise((resolve, reject) => {
     let lastTime = Date.now()
@@ -194,9 +212,10 @@ function electronDownload(opts: DownloadOptions): Promise<string> {
     const task = uni.downloadFile({
       url: opts.url,
       timeout: opts.timeout || 600000,
+      filePath: opts.savePath,
       success: (res: any) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          const filePath = res.tempFilePath || ''
+          const filePath = res.filePath || ''
           opts.onSuccess?.(filePath)
           resolve(filePath)
         } else {
@@ -239,7 +258,6 @@ function extractFilename(url: string): string {
   }
 }
 
-/** 批量并发下载 */
 export async function batchDownload(
   tasks: DownloadOptions[],
   concurrency = 3,
@@ -264,4 +282,27 @@ export async function batchDownload(
     if (running.length) await Promise.race(running)
   }
   return Promise.all(results)
+}
+
+export async function ensureDirectory(dirPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // #ifdef APP-PLUS
+    const fileSystem = plus.io.getFileSystemManager()
+    fileSystem.access({
+      path: dirPath,
+      success: () => resolve(),
+      fail: () => {
+        fileSystem.mkdir({
+          dirPath,
+          recursive: true,
+          success: () => resolve(),
+          fail: (e: any) => reject(new Error(`创建目录失败: ${e.message}`))
+        })
+      }
+    })
+    // #endif
+    // #ifndef APP-PLUS
+    resolve()
+    // #endif
+  })
 }

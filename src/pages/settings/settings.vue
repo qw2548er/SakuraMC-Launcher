@@ -74,6 +74,19 @@ function savePathConfig() {
   showPathModal.value = false
 }
 
+function openFolder(path: string) {
+  // #ifdef APP-PLUS
+  try {
+    plus.io.openFile(path)
+  } catch (e: any) {
+    uni.showToast({ title: '无法打开该路径', icon: 'none' })
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  uni.showToast({ title: '仅手机端支持打开文件夹', icon: 'none' })
+  // #endif
+}
+
 const totalMemory = computed(() => {
   // #ifdef APP-PLUS
   return plus.device.memory * 1024 || 4096
@@ -299,15 +312,19 @@ function selectJavaVersion(ver: string) {
           <view 
             v-for="cfg in pathConfigs" 
             :key="cfg.key"
-            class="setting-item"
-            @tap="openPathConfig(cfg.key, cfg.label)"
+            class="setting-item setting-item--double"
           >
-            <view class="setting-item__icon">{{ cfg.icon }}</view>
-            <view class="setting-item__main">
-              <text class="setting-item__label">{{ cfg.label }}</text>
-              <text class="setting-item__value">{{ cfg.value }}</text>
+            <view class="setting-item__left" @tap="openPathConfig(cfg.key, cfg.label)">
+              <view class="setting-item__icon">{{ cfg.icon }}</view>
+              <view class="setting-item__main">
+                <text class="setting-item__label">{{ cfg.label }}</text>
+                <text class="setting-item__value">{{ cfg.value }}</text>
+              </view>
+              <text class="setting-item__arrow">›</text>
             </view>
-            <text class="setting-item__arrow">›</text>
+            <view class="setting-item__right">
+              <text class="setting-item__action" @tap="openFolder(cfg.value)">打开</text>
+            </view>
           </view>
         </view>
       </view>
@@ -808,6 +825,31 @@ function selectJavaVersion(ver: string) {
     font-size: 36rpx;
     color: #555;
     margin-left: 12rpx;
+  }
+  
+  &--double {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    
+    &__left {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      min-width: 0;
+    }
+    
+    &__right {
+      margin-left: 16rpx;
+    }
+    
+    &__action {
+      font-size: 26rpx;
+      color: #ffb7d5;
+      padding: 12rpx 24rpx;
+      background: rgba(255, 183, 213, 0.1);
+      border-radius: 8rpx;
+    }
   }
 }
 

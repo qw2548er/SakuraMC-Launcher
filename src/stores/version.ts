@@ -3,7 +3,41 @@ import type { IGameVersion, IModLoader, IDownloadTask } from '@/types'
 import { uuid } from '@/utils/format'
 import * as bmcl from '@/api/bmcl'
 import { useSettingsStore } from './settings'
-import { downloadFile } from '@/utils/downloader'
+import { downloadFile, ensureDirectory } from '@/utils/downloader'
+
+async function saveJsonToFile(filePath: string, data: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // #ifdef APP-PLUS
+    const fileSystem = plus.io.getFileSystemManager()
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'))
+    fileSystem.access({
+      path: dir,
+      success: () => writeFile(),
+      fail: () => {
+        fileSystem.mkdir({
+          dirPath: dir,
+          recursive: true,
+          success: writeFile,
+          fail: (e: any) => reject(new Error(`创建目录失败: ${e.message}`))
+        })
+      }
+    })
+    
+    function writeFile() {
+      fileSystem.writeFile({
+        filePath,
+        data: JSON.stringify(data, null, 2),
+        encoding: 'utf-8',
+        success: () => resolve(),
+        fail: (e: any) => reject(new Error(`写入文件失败: ${e.message}`))
+      })
+    }
+    // #endif
+    // #ifndef APP-PLUS
+    resolve()
+    // #endif
+  })
+}
 
 const STORAGE_KEY = 'sakuram.versions.v1'
 const INSTALLED_KEY = 'sakuram.versions.installed.v1'
@@ -154,9 +188,15 @@ export const useVersionStore = defineStore('version', {
         downloaded: 0,
         status: 'downloading'
       })
-      uni.showToast({ title: '正在获取版本信息...', icon: 'none', duration: 2000 })
+      const versionsDir = settings.versionsDir || '/storage/emulated/0/SakuraMC/.minecraft/versions'
+      const versionDir = `${versionsDir}/${versionId}`
+      const jarPath = `${versionDir}/${versionId}.jar`
+      const jsonPath = `${versionDir}/${versionId}.json`
+      
       try {
-        console.log('[Download] 开始下载版本:', versionId, '源:', settings.downloadSource)
+        await ensureDirectory(versionDir)
+        uni.showToast({ title: '正在获取版本信息...', icon: 'none', duration: 2000 })
+        console.log('[Download] 开始下载版本:', versionId, '保存到:', jarPath)
         if (!this.manifest) {
           await this.loadManifest(true)
         }
@@ -198,24 +238,33 @@ export const useVersionStore = defineStore('version', {
         uni.showToast({ title: '开始下载 Minecraft ' + versionId, icon: 'none', duration: 2000 })
         await downloadFile({
           url: clientUrl,
+          savePath: jarPath,
           timeout: 600000,
           onProgress: (downloaded, total, speed) => {
             const realTotal = total || client.size || 0
             this.updateDownload(task.id, { downloaded, total: realTotal, speed })
           },
-          onSuccess: (path) => {
+          onSuccess: async (path) => {
             console.log('[Download] 下载完成,路径:', path)
-            this.updateDownload(task.id, { status: 'completed', downloaded: client.size || 0, total: client.size || 0 })
-            this.markInstalled({
-              ...manifestVersion,
-              installed: true,
-              installedPath: path || `./.minecraft/versions/${versionId}`,
-              size: client.size
-            })
-            // 下载完成后自动选为启动版本
-            this.selectedId = versionId
-            this.persistInstalled()
-            uni.showToast({ title: 'Minecraft ' + versionId + ' 下载完成并自动选中', icon: 'success', duration: 3000 })
+            try {
+              if (versionJson) {
+                await saveJsonToFile(jsonPath, versionJson)
+                console.log('[Download] 版本 JSON 已保存:', jsonPath)
+              }
+              this.updateDownload(task.id, { status: 'completed', downloaded: client.size || 0, total: client.size || 0 })
+              this.markInstalled({
+                ...manifestVersion,
+                installed: true,
+                installedPath: versionDir,
+                size: client.size
+              })
+              this.selectedId = versionId
+              this.persistInstalled()
+              uni.showToast({ title: 'Minecraft ' + versionId + ' 下载完成并自动选中', icon: 'success', duration: 3000 })
+            } catch (e: any) {
+              console.error('[Download] 保存版本 JSON 失败:', e)
+              uni.showToast({ title: '下载完成,但保存配置失败', icon: 'none', duration: 3000 })
+            }
           },
           onError: (e) => {
             console.error('[Download] 下载失败:', e.message)

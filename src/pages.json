@@ -112,6 +112,13 @@
         "navigationBarTitleText": "截图浏览",
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/controls/controls",
+      "style": {
+        "navigationBarTitleText": "按键布局",
+        "navigationStyle": "custom"
+      }
     }
   ],
   "globalStyle": {

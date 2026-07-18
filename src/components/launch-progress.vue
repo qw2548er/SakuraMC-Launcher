@@ -4,8 +4,7 @@ import { useAccountStore } from '@/stores/account'
 import { useVersionStore } from '@/stores/version'
 import { useSettingsStore } from '@/stores/settings'
 import { useJavaStore } from '@/stores/java'
-import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
-import { copyText, downloadFile } from '@/utils/format'
+import { buildLaunchCommand } from '@/utils/launcher'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -26,12 +25,10 @@ const steps = ref([
 
 const currentStep = ref(0)
 const progress = ref(0)
-const speed = ref('0 B/s')
 const showTerminal = ref(false)
 const terminalOutput = ref('')
 const terminalScroll = ref<number>(0)
 const isLaunching = ref(false)
-const launchCommand = ref('')
 const commandStatus = ref<'running' | 'done' | 'error'>('running')
 
 function getStep(id: string) {
@@ -43,7 +40,7 @@ function setStepStatus(id: string, status: 'pending' | 'checking' | 'done' | 'er
   step.status = status
 }
 
-async function runStep(id: string, delay = 800) {
+async function runStep(id: string, delay = 500) {
   setStepStatus(id, 'checking')
   currentStep.value = steps.value.findIndex(s => s.id === id)
   await new Promise(r => setTimeout(r, delay))
@@ -54,7 +51,7 @@ async function runStep(id: string, delay = 800) {
 function appendToTerminal(text: string) {
   terminalOutput.value += text + '\n'
   nextTick(() => {
-    terminalScroll.value = terminalOutput.value.length
+    terminalScroll.value = terminalOutput.value.length * 20
   })
 }
 
@@ -120,7 +117,7 @@ async function startLaunch() {
     const cmd = buildLaunchCommand({
       account,
       version,
-      gameDir: settingsStore.gameDir,
+      gameDir: settingsStore.gameDir || '/storage/emulated/0/SakuraMC/.minecraft',
       javaPath,
       memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
       jvmArgs: ['-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC', '-XX:G1NewSizePercent=20', '-XX:G1ReservePercent=20', '-XX:MaxGCPauseMillis=50', '-XX:G1MixedGCCountTarget=4'],
@@ -128,15 +125,15 @@ async function startLaunch() {
       fullscreen: settingsStore.fullscreen
     })
     
-    launchCommand.value = buildSingleLine(cmd)
+    const launchCmd = cmd.fullCommand.map(c => /\s/.test(c) ? `"${c}"` : c).join(' ')
     
     // #ifdef APP-PLUS
     showTerminal.value = true
-    appendToTerminal('樱花 MC 启动器 v0.2.9')
+    appendToTerminal('樱花 MC 启动器')
     appendToTerminal('正在启动 Minecraft ' + version.id + '...')
     appendToTerminal('')
     
-    await runCommandOnAndroid(launchCommand.value)
+    await runCommandOnAndroid(launchCmd)
     
     commandStatus.value = 'done'
     appendToTerminal('')
@@ -155,11 +152,11 @@ async function startLaunch() {
     
     if (process.platform === 'win32') {
       const batPath = path.join(scriptDir, `start-${version.id}.bat`)
-      fs.writeFileSync(batPath, buildBatchScript(cmd, version.id))
+      fs.writeFileSync(batPath, `@echo off\nchcp 65001 >nul\ntitle 樱花 MC 启动器 - ${version.id}\necho 启动 Minecraft ${version.id}...\necho.\n${cmd.fullCommand.map(c => `"${c}"`).join(' ')}\npause\n`)
       shell.openPath(batPath)
     } else {
       const shPath = path.join(scriptDir, `start-${version.id}.sh`)
-      fs.writeFileSync(shPath, buildShellScript(cmd, version.id))
+      fs.writeFileSync(shPath, `#!/bin/bash\nexport LANG=en_US.UTF-8\necho "启动 Minecraft ${version.id}..."\n${cmd.fullCommand.map(c => `"${c}"`).join(' ')}\n`)
       fs.chmodSync(shPath, 0o755)
       shell.openPath(shPath)
     }
@@ -168,9 +165,6 @@ async function startLaunch() {
     appendToTerminal('樱花 MC 启动器')
     appendToTerminal('启动脚本已创建并运行')
     appendToTerminal('游戏窗口应该会自动弹出')
-    appendToTerminal('')
-    appendToTerminal('命令:')
-    appendToTerminal(launchCommand.value)
     commandStatus.value = 'done'
     // #endif
     
@@ -178,12 +172,7 @@ async function startLaunch() {
     showTerminal.value = true
     appendToTerminal('樱花 MC 启动器')
     appendToTerminal('警告: 浏览器环境无法直接启动游戏')
-    appendToTerminal('请在 PC 上复制以下命令到终端执行')
-    appendToTerminal('')
-    appendToTerminal('命令:')
-    appendToTerminal(launchCommand.value)
-    appendToTerminal('')
-    appendToTerminal('或下载启动脚本双击运行')
+    appendToTerminal('请在 PC 上使用桌面端启动器')
     commandStatus.value = 'done'
     // #endif
     
@@ -195,53 +184,6 @@ async function startLaunch() {
   } finally {
     isLaunching.value = false
   }
-}
-
-function copyCmd() {
-  copyText(launchCommand.value)
-  uni.showToast({ title: '已复制到剪贴板', icon: 'success' })
-}
-
-function downloadBat() {
-  const account = accountStore.selected!
-  const version = versionStore.selected!
-  const javaPath = javaStore.selectedVersion?.path || settingsStore.javaPath || 'java'
-  
-  const cmd = buildLaunchCommand({
-    account,
-    version,
-    gameDir: settingsStore.gameDir,
-    javaPath,
-    memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
-    jvmArgs: [],
-    gameArgs: [],
-    fullscreen: settingsStore.fullscreen
-  })
-  
-  const script = buildBatchScript(cmd, version.id)
-  downloadFile(`start-${version.id}.bat`, script)
-  uni.showToast({ title: '已下载 .bat 启动脚本', icon: 'success' })
-}
-
-function downloadSh() {
-  const account = accountStore.selected!
-  const version = versionStore.selected!
-  const javaPath = javaStore.selectedVersion?.path || settingsStore.javaPath || 'java'
-  
-  const cmd = buildLaunchCommand({
-    account,
-    version,
-    gameDir: settingsStore.gameDir,
-    javaPath,
-    memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
-    jvmArgs: [],
-    gameArgs: [],
-    fullscreen: settingsStore.fullscreen
-  })
-  
-  const script = buildShellScript(cmd, version.id)
-  downloadFile(`start-${version.id}.sh`, script)
-  uni.showToast({ title: '已下载 .sh 启动脚本', icon: 'success' })
 }
 
 onMounted(() => {
@@ -279,10 +221,6 @@ onMounted(() => {
           </view>
         </view>
         
-        <view class="lp-speed">
-          <text>{{ speed }}</text>
-        </view>
-        
         <view v-if="!isLaunching" class="lp-cancel">
           <text @tap="emit('close')">取消</text>
         </view>
@@ -307,23 +245,9 @@ onMounted(() => {
           </scroll-view>
         </view>
         
-        <view class="lp-cmd-box" v-if="commandStatus === 'done'">
-          <text class="lp-cmd-label">启动命令:</text>
-          <text class="lp-cmd" user-select="text">{{ launchCommand }}</text>
-        </view>
-        
         <view class="lp-actions">
-          <view class="lp-btn lp-btn--primary" @tap="copyCmd">
-            <text>📋 复制命令</text>
-          </view>
-          <view class="lp-btn lp-btn--secondary" @tap="downloadBat">
-            <text>💾 下载 .bat 启动脚本</text>
-          </view>
-          <view class="lp-btn lp-btn--ghost" @tap="downloadSh">
-            <text>💾 下载 .sh 启动脚本</text>
-          </view>
-          <view class="lp-btn lp-btn--ghost" @tap="emit('close')">
-            <text>关闭</text>
+          <view class="lp-btn lp-btn--primary" @tap="emit('close')">
+            <text>{{ commandStatus === 'done' ? '关闭' : '取消' }}</text>
           </view>
         </view>
       </view>
@@ -444,13 +368,6 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.4);
 }
 
-.lp-speed {
-  text-align: center;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.3);
-  margin-top: 24rpx;
-}
-
 .lp-cancel {
   text-align: center;
   margin-top: 32rpx;
@@ -510,29 +427,6 @@ onMounted(() => {
   }
 }
 
-.lp-cmd-box {
-  background: rgba(0, 0, 0, 0.4);
-  padding: 20rpx;
-  border-radius: 12rpx;
-  border: 2rpx solid rgba(255, 183, 213, 0.15);
-  margin-bottom: 24rpx;
-}
-
-.lp-cmd-label {
-  display: block;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 12rpx;
-}
-
-.lp-cmd {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.6);
-  font-family: monospace;
-  word-break: break-all;
-  line-height: 1.7;
-}
-
 .lp-actions {
   display: flex;
   flex-direction: column;
@@ -551,17 +445,6 @@ onMounted(() => {
     background: linear-gradient(135deg, #ffb7d5, #ff8fab);
     color: #fff;
     font-weight: 600;
-  }
-  
-  &--secondary {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-  }
-  
-  &--ghost {
-    background: transparent;
-    color: rgba(255, 255, 255, 0.4);
-    border: 2rpx solid rgba(255, 255, 255, 0.1);
   }
   
   &:active {
