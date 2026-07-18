@@ -2,27 +2,25 @@
 import { ref, computed, onMounted } from 'vue'
 import { useVersionStore } from '@/stores/version'
 import { useSettingsStore } from '@/stores/settings'
-import McCard from '@/components/mc-card.vue'
-import McButton from '@/components/mc-button.vue'
-import McBadge from '@/components/mc-badge.vue'
-import NotDeveloped from '@/components/not-developed.vue'
 import { formatBytes, formatTime } from '@/utils/format'
 
 const versionStore = useVersionStore()
 const settingsStore = useSettingsStore()
 const search = ref('')
-const filterType = ref<'all' | 'release' | 'snapshot' | 'installed'>('installed')
-const showSnapshots = ref(false)
+const activeTab = ref<'installed' | 'download'>('installed')
+const filterType = ref<'all' | 'release' | 'snapshot'>('release')
 
 onMounted(() => {
   if (!versionStore.manifest) versionStore.loadManifest()
 })
 
-const filteredVersions = computed(() => {
+const installedList = computed(() => {
+  return Object.values(versionStore.installed)
+})
+
+const remoteVersions = computed(() => {
   let list = versionStore.manifest?.versions || []
-  if (filterType.value === 'installed') {
-    list = Object.values(versionStore.installed)
-  } else if (filterType.value === 'release') {
+  if (filterType.value === 'release') {
     list = list.filter(v => v.type === 'release')
   } else if (filterType.value === 'snapshot') {
     list = list.filter(v => v.type === 'snapshot')
@@ -31,232 +29,525 @@ const filteredVersions = computed(() => {
     const q = search.value.toLowerCase()
     list = list.filter(v => v.id.toLowerCase().includes(q))
   }
-  return list.slice(0, 200)
+  return list.slice(0, 100)
 })
+
+function isInstalled(id: string): boolean {
+  return !!versionStore.installed[id]
+}
 
 function selectVersion(id: string) {
   versionStore.select(id)
   uni.showToast({ title: '已选择 ' + id, icon: 'success' })
+  setTimeout(() => uni.navigateBack(), 500)
 }
 
-function openVersion(id: string) {
-  uni.navigateTo({ url: '/pages/versions/version-detail?id=' + id })
+function installVersion(id: string) {
+  uni.showModal({
+    title: '下载版本',
+    content: `确定要下载 Minecraft ${id} 吗？`,
+    success: (res) => {
+      if (res.confirm) {
+        versionStore.download(id)
+        uni.showToast({ title: '开始下载', icon: 'none' })
+        activeTab.value = 'installed'
+      }
+    }
+  })
 }
 
-function clearDownloads() {
-  versionStore.clearCompletedDownloads()
-  uni.showToast({ title: '已清理', icon: 'success' })
+function deleteVersion(id: string) {
+  uni.showModal({
+    title: '删除版本',
+    content: `确定要删除 Minecraft ${id} 吗？存档不会被删除。`,
+    confirmColor: '#ff6b6b',
+    success: (res) => {
+      if (res.confirm) {
+        versionStore.uninstall(id)
+        uni.showToast({ title: '已删除', icon: 'success' })
+      }
+    }
+  })
+}
+
+function cancelDownload(id: string) {
+  versionStore.cancelDownload(id)
+}
+
+function getDownloadStatus(id: string): string {
+  const task = versionStore.downloads[id]
+  if (!task) return 'idle'
+  return task.status
+}
+
+function getDownloadProgress(id: string): number {
+  const task = versionStore.downloads[id]
+  if (!task) return 0
+  return task.progress
 }
 </script>
 
 <template>
   <view class="versions">
-    <NotDeveloped variant="banner" feature="游戏版本下载与安装" plan="v0.3.0" />
     <view class="versions__header">
-      <view>
-        <text class="versions__title">版本管理</text>
-        <text class="versions__subtitle">已装 {{ Object.keys(versionStore.installed).length }} · 清单 {{ versionStore.manifest?.versions.length || 0 }}</text>
-      </view>
-      <McButton variant="secondary" size="sm" @click="versionStore.loadManifest(true)">🔄</McButton>
+      <text class="versions__back" @tap="uni.navigateBack()">‹</text>
+      <text class="versions__title">版本管理</text>
     </view>
-
-    <view class="versions__filter">
-      <view class="filter-tabs">
-        <view
-          v-for="t in [
-            { v: 'installed', l: '已安装' },
-            { v: 'release', l: '正式版' },
-            { v: 'snapshot', l: '快照' }
-          ]"
-          :key="t.v"
-          class="filter-tab"
-          :class="{ 'is-active': filterType === t.v }"
-          @tap="filterType = t.v as any"
-        >{{ t.l }}</view>
-      </view>
-      <view class="filter-search">
-        <input
-          v-model="search"
-          class="filter-search__input"
-          placeholder="搜索版本 (如 1.21)"
-        />
-      </view>
-    </view>
-
-    <view v-if="versionStore.downloads.length" class="versions__downloads">
-      <view class="versions__section-head">
-        <text class="versions__section-title">下载任务</text>
-        <text class="versions__section-action" @tap="clearDownloads">清理已完成</text>
-      </view>
-      <view v-for="d in versionStore.downloads" :key="d.id" class="dl-item">
-        <view class="dl-item__head">
-          <text class="dl-item__name">{{ d.name }}</text>
-          <McBadge :status="d.status === 'downloading' ? 'starting' : d.status === 'completed' ? 'online' : d.status === 'error' ? 'error' : 'offline'" :text="d.status" />
-        </view>
-        <view class="dl-item__bar">
-          <view class="dl-item__fill" :style="{ width: (d.downloaded / Math.max(d.total, 1) * 100) + '%' }" />
-        </view>
-        <text class="dl-item__sub">{{ formatBytes(d.downloaded) }} / {{ formatBytes(d.total) }} · {{ d.speed ? formatBytes(d.speed) + '/s' : '' }}</text>
-      </view>
-    </view>
-
-    <view v-if="versionStore.manifestLoading" class="versions__loading">
-      <view class="versions__spinner" />
-      <text class="versions__loading-text">正在加载版本清单...</text>
-    </view>
-
-    <view v-else-if="filteredVersions.length === 0" class="versions__empty">
-      <text class="versions__empty-icon">📦</text>
-      <text class="versions__empty-title">暂无版本</text>
-      <text class="versions__empty-sub">{{ filterType === 'installed' ? '还没有安装任何版本, 切换到正式版开始' : '试试其他筛选条件' }}</text>
-    </view>
-
-    <view v-else class="versions__list">
-      <view
-        v-for="v in filteredVersions"
-        :key="v.id"
-        class="version-item"
-        :class="{ 'is-selected': v.id === versionStore.selectedId }"
-        @tap="selectVersion(v.id)"
-        @longpress="openVersion(v.id)"
+    
+    <view class="versions__tabs">
+      <view 
+        class="versions__tab"
+        :class="{ 'versions__tab--active': activeTab === 'installed' }"
+        @tap="activeTab = 'installed'"
       >
-        <view class="version-item__head">
-          <view class="version-item__icon" :class="{ 'is-snapshot': v.type === 'snapshot' }">
-            <text>{{ v.type === 'snapshot' ? '⚡' : v.type === 'release' ? '⛏️' : '📜' }}</text>
+        <text>已安装</text>
+        <text class="versions__tab-count">{{ installedList.length }}</text>
+      </view>
+      <view 
+        class="versions__tab"
+        :class="{ 'versions__tab--active': activeTab === 'download' }"
+        @tap="activeTab = 'download'"
+      >
+        <text>可下载</text>
+        <text class="versions__tab-count">{{ versionStore.manifest?.versions.length || 0 }}</text>
+      </view>
+      <view class="versions__tab-indicator" :style="{ left: activeTab === 'installed' ? '0%' : '50%' }" />
+    </view>
+    
+    <scroll-view scroll-y class="versions__content">
+      <view v-if="activeTab === 'installed'" class="versions__panel">
+        <view v-if="installedList.length === 0" class="versions__empty">
+          <text class="versions__empty-icon">📦</text>
+          <text class="versions__empty-text">还没有安装任何版本</text>
+          <text class="versions__empty-hint">去「可下载」里安装一个吧</text>
+        </view>
+        
+        <view 
+          v-for="ver in installedList" 
+          :key="ver.id"
+          class="version-card"
+          @tap="selectVersion(ver.id)"
+        >
+          <view class="version-card__icon">
+            <text>🎮</text>
           </view>
-          <view class="version-item__main">
-            <view class="version-item__name-row">
-              <text class="version-item__name">{{ v.id }}</text>
-              <text v-if="versionStore.installed[v.id]" class="version-item__installed">已装</text>
-              <text v-else-if="v.id === versionStore.selectedId" class="version-item__installed is-sel">已选</text>
+          <view class="version-card__main">
+            <text class="version-card__name">{{ ver.id }}</text>
+            <text class="version-card__info">
+              {{ ver.type === 'release' ? '正式版' : ver.type === 'snapshot' ? '快照版' : ver.type }}
+              · {{ ver.releaseTime ? formatTime(ver.releaseTime) : '' }}
+            </text>
+          </view>
+          <view class="version-card__actions">
+            <view class="version-card__delete" @tap.stop="deleteVersion(ver.id)">
+              <text>删除</text>
             </view>
-            <text class="version-item__sub">{{ v.type }} · {{ formatTime(v.releaseTime) }}</text>
-          </view>
-          <view class="version-item__action" @tap.stop="openVersion(v.id)">
-            <text>›</text>
           </view>
         </view>
-        <view class="version-item__loader-tags">
-          <text v-if="v.hasForge" class="loader-tag">Forge</text>
-          <text v-if="v.hasFabric" class="loader-tag">Fabric</text>
-          <text v-if="v.hasOptifine" class="loader-tag">OptiFine</text>
+        
+        <view v-if="Object.keys(versionStore.downloads).length > 0" class="downloads-section">
+          <text class="downloads-section__title">下载任务</text>
+          
+          <view 
+            v-for="task in versionStore.downloads" 
+            :key="task.versionId"
+            class="download-item"
+          >
+            <view class="download-item__head">
+              <text class="download-item__name">{{ task.versionId }}</text>
+              <text 
+                class="download-item__status"
+                :class="{ 'download-item__status--loading': task.status === 'downloading' }"
+              >
+                {{ task.status === 'downloading' ? '下载中' : task.status === 'done' ? '已完成' : task.status === 'error' ? '失败' : '等待中' }}
+              </text>
+            </view>
+            <view class="download-item__bar">
+              <view 
+                class="download-item__bar-fill" 
+                :style="{ width: task.progress + '%' }"
+                :class="{ 'download-item__bar-fill--error': task.status === 'error' }"
+              />
+            </view>
+            <view class="download-item__info">
+              <text>{{ task.progress }}%</text>
+              <text v-if="task.status === 'downloading'" class="download-item__cancel" @tap="cancelDownload(task.versionId)">取消</text>
+            </view>
+          </view>
         </view>
       </view>
-    </view>
+      
+      <view v-if="activeTab === 'download'" class="versions__panel">
+        <view class="versions__filters">
+          <input 
+            class="versions__search" 
+            v-model="search" 
+            placeholder="搜索版本..."
+            placeholder-style="color: #666"
+          />
+          <view class="versions__filter-row">
+            <view 
+              class="filter-chip"
+              :class="{ 'filter-chip--active': filterType === 'release' }"
+              @tap="filterType = 'release'"
+            >
+              <text>正式版</text>
+            </view>
+            <view 
+              class="filter-chip"
+              :class="{ 'filter-chip--active': filterType === 'snapshot' }"
+              @tap="filterType = 'snapshot'"
+            >
+              <text>快照版</text>
+            </view>
+            <view 
+              class="filter-chip"
+              :class="{ 'filter-chip--active': filterType === 'all' }"
+              @tap="filterType = 'all'"
+            >
+              <text>全部</text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="versions__list">
+          <view 
+            v-for="ver in remoteVersions" 
+            :key="ver.id"
+            class="version-card"
+          >
+            <view class="version-card__icon">
+              <text>{{ ver.type === 'release' ? '🎮' : '🧪' }}</text>
+            </view>
+            <view class="version-card__main">
+              <text class="version-card__name">{{ ver.id }}</text>
+              <text class="version-card__info">
+                {{ ver.type === 'release' ? '正式版' : '快照版' }}
+                · {{ ver.releaseTime ? formatTime(ver.releaseTime) : '' }}
+              </text>
+            </view>
+            <view class="version-card__actions">
+              <view 
+                v-if="isInstalled(ver.id)" 
+                class="version-card__installed"
+                @tap="selectVersion(ver.id)"
+              >
+                <text>已安装</text>
+              </view>
+              <view 
+                v-else 
+                class="version-card__install"
+                @tap="installVersion(ver.id)"
+              >
+                <text>安装</text>
+              </view>
+            </view>
+          </view>
+        </view>
+        
+        <view class="versions__loadmore">
+          <text>仅显示前 100 个版本</text>
+        </view>
+      </view>
+    </scroll-view>
   </view>
 </template>
 
 <style lang="scss" scoped>
 .versions {
-  min-height: 100vh;
-  background: #0f0f1a;
-  padding: 32rpx;
-  padding-bottom: 180rpx;
-  &__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24rpx; }
-  &__title { font-size: 44rpx; font-weight: 700; color: #ffffff; display: block; }
-  &__subtitle { font-size: 24rpx; color: #b8a8d4; display: block; margin-top: 4rpx; }
-  &__filter { margin-bottom: 24rpx; display: flex; flex-direction: column; gap: 16rpx; }
-  &__section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
-  &__section-title { font-size: 28rpx; color: #ffffff; font-weight: 700; }
-  &__section-action { font-size: 24rpx; color: #d896ff; }
-  &__downloads { margin-bottom: 24rpx; }
-  &__loading { text-align: center; padding: 80rpx 0; }
-  &__spinner {
-    width: 48rpx; height: 48rpx; margin: 0 auto 16rpx;
-    border: 4rpx solid rgba(216, 150, 255, 0.3);
-    border-top-color: #d896ff;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1a1530 0%, #0f0d1f 100%);
+  
+  &__header {
+    display: flex;
+    align-items: center;
+    padding: 60rpx 24rpx 16rpx;
   }
-  &__loading-text { font-size: 26rpx; color: #b8a8d4; }
-  &__empty { text-align: center; padding: 100rpx 0; }
-  &__empty-icon { font-size: 100rpx; display: block; margin-bottom: 16rpx; }
-  &__empty-title { font-size: 32rpx; color: #ffffff; display: block; }
-  &__empty-sub { font-size: 24rpx; color: #6a5a8a; display: block; margin-top: 8rpx; }
-  &__list { display: flex; flex-direction: column; gap: 16rpx; }
+  
+  &__back {
+    font-size: 48rpx;
+    color: #ffb7d5;
+    margin-right: 16rpx;
+    padding: 0 8rpx;
+  }
+  
+  &__title {
+    font-size: 44rpx;
+    font-weight: 700;
+    color: #fff;
+  }
+  
+  &__tabs {
+    display: flex;
+    position: relative;
+    padding: 0 24rpx;
+    margin-bottom: 16rpx;
+  }
+  
+  &__tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8rpx;
+    padding: 20rpx 0;
+    font-size: 28rpx;
+    color: #888;
+    position: relative;
+    z-index: 1;
+    
+    &--active {
+      color: #ffb7d5;
+      font-weight: 600;
+    }
+  }
+  
+  &__tab-count {
+    font-size: 22rpx;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2rpx 12rpx;
+    border-radius: 20rpx;
+  }
+  
+  &__tab-indicator {
+    position: absolute;
+    bottom: 0;
+    width: 50%;
+    height: 4rpx;
+    background: linear-gradient(90deg, #ffb7d5, #ff8fab);
+    border-radius: 2rpx;
+    transition: left 0.3s;
+  }
+  
+  &__content {
+    flex: 1;
+    padding: 0 24rpx 40rpx;
+  }
+  
+  &__panel {
+    padding-bottom: 40rpx;
+  }
+  
+  &__filters {
+    margin-bottom: 16rpx;
+  }
+  
+  &__search {
+    width: 100%;
+    height: 72rpx;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 12rpx;
+    padding: 0 20rpx;
+    font-size: 28rpx;
+    color: #fff;
+    box-sizing: border-box;
+    margin-bottom: 16rpx;
+  }
+  
+  &__filter-row {
+    display: flex;
+    gap: 12rpx;
+  }
+  
+  &__empty {
+    text-align: center;
+    padding: 120rpx 0;
+  }
+  
+  &__empty-icon {
+    font-size: 80rpx;
+    display: block;
+    margin-bottom: 16rpx;
+  }
+  
+  &__empty-text {
+    font-size: 30rpx;
+    color: #fff;
+    display: block;
+    margin-bottom: 8rpx;
+  }
+  
+  &__empty-hint {
+    font-size: 24rpx;
+    color: #666;
+    display: block;
+  }
+  
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 12rpx;
+  }
+  
+  &__loadmore {
+    text-align: center;
+    padding: 32rpx 0;
+    font-size: 22rpx;
+    color: #555;
+  }
 }
 
-.filter-tabs {
-  display: flex; gap: 8rpx;
-  background: rgba(45, 27, 78, 0.4);
-  padding: 6rpx; border-radius: 16rpx;
-}
-.filter-tab {
-  flex: 1; text-align: center;
-  padding: 16rpx;
-  font-size: 26rpx; color: #b8a8d4; font-weight: 600;
-  border-radius: 12rpx;
-  &.is-active {
-    background: linear-gradient(135deg, #ffb7d5, #d896ff);
-    color: #1a0f2e;
-  }
-}
-.filter-search {
-  background: rgba(15, 15, 26, 0.6);
-  border: 2rpx solid rgba(216, 150, 255, 0.15);
-  border-radius: 16rpx;
-  padding: 16rpx 24rpx;
-  &__input {
-    width: 100%; background: transparent; border: none; outline: none;
-    font-size: 26rpx; color: #ffffff;
-    font-family: inherit;
-    &::placeholder { color: #6a5a8a; }
-  }
-}
-
-.dl-item {
-  background: rgba(45, 27, 78, 0.6);
-  border: 2rpx solid rgba(216, 150, 255, 0.1);
-  border-radius: 16rpx;
-  padding: 20rpx;
-  margin-bottom: 12rpx;
-  &__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
-  &__name { font-size: 26rpx; color: #ffffff; font-weight: 600; }
-  &__bar { height: 8rpx; background: rgba(106, 90, 138, 0.3); border-radius: 4rpx; overflow: hidden; }
-  &__fill { height: 100%; background: linear-gradient(90deg, #ffb7d5, #d896ff); border-radius: 4rpx; transition: width 0.3s; }
-  &__sub { display: block; font-size: 22rpx; color: #6a5a8a; margin-top: 8rpx; }
-}
-
-.version-item {
-  background: linear-gradient(135deg, rgba(45, 27, 78, 0.7), rgba(26, 15, 46, 0.7));
-  border: 2rpx solid rgba(216, 150, 255, 0.15);
+.filter-chip {
+  padding: 12rpx 24rpx;
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 20rpx;
+  font-size: 24rpx;
+  color: #888;
+  
+  &--active {
+    background: rgba(255, 183, 213, 0.2);
+    color: #ffb7d5;
+  }
+}
+
+.version-card {
+  display: flex;
+  align-items: center;
   padding: 20rpx;
-  &.is-selected {
-    border-color: #d896ff;
-    box-shadow: 0 0 24rpx rgba(216, 150, 255, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14rpx;
+  margin-bottom: 12rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.04);
+  transition: all 0.2s;
+  
+  &:active {
+    background: rgba(255, 255, 255, 0.06);
+    transform: scale(0.99);
   }
-  &__head { display: flex; align-items: center; gap: 16rpx; }
+  
   &__icon {
-    width: 72rpx; height: 72rpx;
-    background: linear-gradient(135deg, #2d1b4e, #1a0f2e);
-    border-radius: 16rpx;
-    display: flex; align-items: center; justify-content: center;
+    width: 64rpx;
+    height: 64rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 36rpx;
-    border: 2rpx solid rgba(216, 150, 255, 0.2);
+    background: rgba(255, 183, 213, 0.1);
+    border-radius: 14rpx;
+    margin-right: 16rpx;
+  }
+  
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  &__name {
+    font-size: 28rpx;
+    color: #fff;
+    font-weight: 600;
+    display: block;
+  }
+  
+  &__info {
+    font-size: 22rpx;
+    color: #888;
+    display: block;
+    margin-top: 4rpx;
+  }
+  
+  &__actions {
     flex-shrink: 0;
-    &.is-snapshot { border-color: #fbbf24; }
   }
-  &__main { flex: 1; min-width: 0; }
-  &__name-row { display: flex; align-items: center; gap: 12rpx; }
-  &__name { font-size: 30rpx; color: #ffffff; font-weight: 700; }
+  
+  &__install {
+    padding: 12rpx 28rpx;
+    background: linear-gradient(135deg, #ffb7d5, #ff8fab);
+    border-radius: 10rpx;
+    font-size: 24rpx;
+    color: #fff;
+    font-weight: 600;
+  }
+  
   &__installed {
-    font-size: 20rpx; padding: 2rpx 12rpx;
-    background: rgba(74, 222, 128, 0.2); color: #4ade80;
-    border-radius: 9999rpx;
-    &.is-sel { background: rgba(216, 150, 255, 0.2); color: #d896ff; }
+    padding: 12rpx 24rpx;
+    background: rgba(82, 196, 26, 0.15);
+    border-radius: 10rpx;
+    font-size: 24rpx;
+    color: #52c41a;
   }
-  &__sub { font-size: 22rpx; color: #b8a8d4; display: block; margin-top: 4rpx; }
-  &__action { font-size: 48rpx; color: #6a5a8a; padding: 0 8rpx; }
-  &__loader-tags { display: flex; gap: 8rpx; margin-top: 12rpx; padding-left: 88rpx; }
+  
+  &__delete {
+    padding: 12rpx 24rpx;
+    background: rgba(255, 107, 107, 0.15);
+    border-radius: 10rpx;
+    font-size: 24rpx;
+    color: #ff6b6b;
+  }
 }
 
-.loader-tag {
-  font-size: 20rpx; padding: 4rpx 12rpx;
-  background: rgba(96, 165, 250, 0.2);
-  color: #60a5fa;
-  border-radius: 8rpx;
+.downloads-section {
+  margin-top: 24rpx;
+  
+  &__title {
+    font-size: 26rpx;
+    color: #ffb7d5;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 16rpx;
+  }
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+.download-item {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 12rpx;
+  
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12rpx;
+  }
+  
+  &__name {
+    font-size: 26rpx;
+    color: #fff;
+    font-weight: 500;
+  }
+  
+  &__status {
+    font-size: 22rpx;
+    color: #888;
+    
+    &--loading {
+      color: #ffb7d5;
+    }
+  }
+  
+  &__bar {
+    height: 8rpx;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4rpx;
+    overflow: hidden;
+  }
+  
+  &__bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ffb7d5, #ff8fab);
+    border-radius: 4rpx;
+    transition: width 0.3s;
+    
+    &--error {
+      background: #ff6b6b;
+    }
+  }
+  
+  &__info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8rpx;
+    font-size: 22rpx;
+    color: #666;
+  }
+  
+  &__cancel {
+    color: #ff6b6b;
+    padding: 4rpx 8rpx;
+  }
+}
 </style>

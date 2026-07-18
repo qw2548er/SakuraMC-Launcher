@@ -2,8 +2,8 @@
   "name": "樱花 MC 启动器",
   "appid": "__UNI__SAKURAM",
   "description": "MC 启动器 + 樱花穿透跨端控制台",
-  "versionName": "0.2.3",
-  "versionCode": "9",
+  "versionName": "0.3.0",
+  "versionCode": "10",
   "transformPx": false,
   "app-plus": {
     "usingComponents": true,

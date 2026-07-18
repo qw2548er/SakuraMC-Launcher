@@ -11,7 +11,6 @@ import McButton from '@/components/mc-button.vue'
 import McCard from '@/components/mc-card.vue'
 import McBadge from '@/components/mc-badge.vue'
 import GameIcon from '@/components/game-icon.vue'
-import NotDeveloped from '@/components/not-developed.vue'
 import UpdateModal from '@/components/update-modal.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
@@ -346,8 +345,86 @@ onMounted(() => {
               </view>
             </view>
             
-            <view v-else class="panel__body panel__body--empty">
-              <NotDeveloped feature="该设置页" />
+            <view v-else-if="activeTab === 'version'" class="panel__body">
+              <view class="setting-list">
+                <view class="setting-item" @tap="chooseVersion">
+                  <view class="setting-item__icon">📋</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">已安装版本</text>
+                    <text class="setting-item__value">{{ Object.keys(versionStore.installed).length }} 个</text>
+                  </view>
+                  <text class="setting-item__arrow">›</text>
+                </view>
+                <view class="setting-item" @tap="chooseVersion">
+                  <view class="setting-item__icon">⬇️</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">下载新版本</text>
+                    <text class="setting-item__value">从官方源下载</text>
+                  </view>
+                  <text class="setting-item__arrow">›</text>
+                </view>
+                <view class="setting-item">
+                  <view class="setting-item__icon">🔬</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">显示快照版本</text>
+                  </view>
+                  <switch :checked="settingsStore.showSnapshots" color="#ff8fab" style="transform: scale(0.7)" />
+                </view>
+              </view>
+            </view>
+            
+            <view v-else-if="activeTab === 'auto'" class="panel__body">
+              <view class="setting-list">
+                <view class="setting-item">
+                  <view class="setting-item__icon">🔩</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">自动安装 Forge</text>
+                    <text class="setting-item__value">安装版本后自动安装</text>
+                  </view>
+                </view>
+                <view class="setting-item">
+                  <view class="setting-item__icon">🧵</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">自动安装 Fabric</text>
+                    <text class="setting-item__value">安装版本后自动安装</text>
+                  </view>
+                </view>
+                <view class="setting-item">
+                  <view class="setting-item__icon">🎀</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">自动安装 OptiFine</text>
+                    <text class="setting-item__value">安装版本后自动安装</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+            
+            <view v-else class="panel__body">
+              <view class="setting-list">
+                <view class="setting-item" @tap="openSettings">
+                  <view class="setting-item__icon">🎨</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">主题</text>
+                    <text class="setting-item__value">樱花粉</text>
+                  </view>
+                  <text class="setting-item__arrow">›</text>
+                </view>
+                <view class="setting-item">
+                  <view class="setting-item__icon">🔄</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">自动检查更新</text>
+                  </view>
+                  <switch :checked="settingsStore.autoCheckUpdate" color="#ff8fab" style="transform: scale(0.7)" />
+                </view>
+                <view class="setting-item" @tap="openSettings">
+                  <view class="setting-item__icon">📁</view>
+                  <view class="setting-item__main">
+                    <text class="setting-item__label">游戏目录</text>
+                    <text class="setting-item__value">{{ settingsStore.gameDir || '默认' }}</text>
+                  </view>
+                  <text class="setting-item__arrow">›</text>
+                </view>
+              </view>
             </view>
           </view>
           
@@ -389,8 +466,6 @@ onMounted(() => {
         </view>
         
         <view class="launch-card">
-          <NotDeveloped variant="badge" feature="游戏启动" plan="v0.3.0" />
-          
           <McButton size="xl" glow block @click="startGame" class="launch-btn">
             <text class="launch-btn__text">启动游戏</text>
           </McButton>
