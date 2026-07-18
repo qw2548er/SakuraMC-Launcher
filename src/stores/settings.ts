@@ -11,6 +11,13 @@ const defaultSettings: ISettings = {
   minMemory: 1024,
   downloadSource: 'bmcl' as DownloadSource,
   gameDir: '',
+  versionsDir: '',
+  modsDir: '',
+  resourcepacksDir: '',
+  savesDir: '',
+  screenshotsDir: '',
+  logsDir: '',
+  shaderpacksDir: '',
   showSnapshots: false,
   showOldVersions: false,
   fullscreen: true,
@@ -20,7 +27,13 @@ const defaultSettings: ISettings = {
   frpcBinaryPath: '',
   frpcLogLevel: 'info',
   ignoredVersion: '',
-  autoCheckUpdate: true
+  autoCheckUpdate: true,
+  customJvmArgs: '',
+  customGameArgs: '',
+  windowWidth: 854,
+  windowHeight: 480,
+  serverAddress: '',
+  javaArgs: ''
 }
 
 export const useSettingsStore = defineStore('settings', {

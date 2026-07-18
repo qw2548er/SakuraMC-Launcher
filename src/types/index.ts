@@ -116,7 +116,15 @@ export interface ISettings {
   maxMemory: number
   minMemory: number
   downloadSource: 'mojang' | 'bmcl' | 'mcbbs'
-  gameDir: string
+  // FCL 风格路径配置
+  gameDir: string                    // 游戏主目录 (第一个路径名: SakuraMC 游戏目录)
+  versionsDir: string                // 版本目录 (versions)
+  modsDir: string                    // 模组目录 (mods)
+  resourcepacksDir: string           // 资源包目录 (resourcepacks)
+  savesDir: string                   // 存档目录 (saves)
+  screenshotsDir: string             // 截图目录 (screenshots)
+  logsDir: string                    // 日志目录 (logs)
+  shaderpacksDir: string             // 光影包目录 (shaderpacks)
   showSnapshots: boolean
   showOldVersions: boolean
   fullscreen: boolean
@@ -127,6 +135,13 @@ export interface ISettings {
   frpcLogLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error'
   ignoredVersion: string
   autoCheckUpdate: boolean
+  // 自定义 JVM 参数
+  customJvmArgs: string
+  customGameArgs: string
+  windowWidth: number
+  windowHeight: number
+  serverAddress: string
+  javaArgs: string
 }
 
 export interface IAppUpdate {
