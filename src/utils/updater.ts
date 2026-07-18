@@ -3,7 +3,7 @@ import type { IAppUpdate } from '@/types'
 const GITHUB_API = 'https://api.github.com/repos/qw2548er/SakuraMC-Launcher/releases/latest'
 const GITHUB_RELEASE = 'https://github.com/qw2548er/SakuraMC-Launcher/releases/latest'
 
-export const APP_VERSION = '0.3.0'
+export const APP_VERSION = '0.2.5'
 
 function compareVersion(v1: string, v2: string): number {
   const a = v1.replace(/^v/, '').split('.').map(n => parseInt(n, 10))

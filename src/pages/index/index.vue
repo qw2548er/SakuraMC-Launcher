@@ -106,6 +106,15 @@ function openSettings() {
 function openMods() {
   uni.navigateTo({ url: '/pages/mods/mods' })
 }
+function openSaves() {
+  uni.navigateTo({ url: '/pages/saves/saves' })
+}
+function openLogs() {
+  uni.navigateTo({ url: '/pages/logs/logs' })
+}
+function openScreenshots() {
+  uni.navigateTo({ url: '/pages/screenshots/screenshots' })
+}
 
 function startGame() {
   if (!selectedAccount.value) {
@@ -280,6 +289,30 @@ onMounted(() => {
                   <view class="quick-card__info">
                     <text class="quick-card__label">樱花穿透</text>
                     <text class="quick-card__value">{{ frpStatus }}</text>
+                  </view>
+                  <text class="quick-card__arrow">›</text>
+                </view>
+                <view class="quick-card" @tap="openSaves">
+                  <view class="quick-card__icon">🏝️</view>
+                  <view class="quick-card__info">
+                    <text class="quick-card__label">存档管理</text>
+                    <text class="quick-card__value">备份 & 恢复</text>
+                  </view>
+                  <text class="quick-card__arrow">›</text>
+                </view>
+                <view class="quick-card" @tap="openLogs">
+                  <view class="quick-card__icon">📝</view>
+                  <view class="quick-card__info">
+                    <text class="quick-card__label">日志查看器</text>
+                    <text class="quick-card__value">启动日志 & 错误</text>
+                  </view>
+                  <text class="quick-card__arrow">›</text>
+                </view>
+                <view class="quick-card" @tap="openScreenshots">
+                  <view class="quick-card__icon">📷</view>
+                  <view class="quick-card__info">
+                    <text class="quick-card__label">截图浏览</text>
+                    <text class="quick-card__value">浏览游戏截图</text>
                   </view>
                   <text class="quick-card__arrow">›</text>
                 </view>

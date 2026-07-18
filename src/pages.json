@@ -91,6 +91,27 @@
         "navigationBarTitleText": "设置",
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/saves/saves",
+      "style": {
+        "navigationBarTitleText": "存档管理",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/logs/logs",
+      "style": {
+        "navigationBarTitleText": "日志查看器",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/screenshots/screenshots",
+      "style": {
+        "navigationBarTitleText": "截图浏览",
+        "navigationStyle": "custom"
+      }
     }
   ],
   "globalStyle": {
