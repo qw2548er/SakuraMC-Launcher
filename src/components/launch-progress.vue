@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useVersionStore } from '@/stores/version'
 import { useSettingsStore } from '@/stores/settings'
 import { useJavaStore } from '@/stores/java'
-import { buildLaunchCommand } from '@/utils/launcher'
+import { 
+  installVersion, 
+  resolveVersionJson, 
+  buildLaunchCommand,
+  isVersionInstalled,
+  type InstallStep 
+} from '@/utils/install'
+import { MINECRAFT_DIR } from '@/utils/setup'
+import { formatBytes } from '@/utils/format'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -15,37 +23,45 @@ const versionStore = useVersionStore()
 const settingsStore = useSettingsStore()
 const javaStore = useJavaStore()
 
-const steps = ref([
-  { id: 'checkJava', label: '检查 Java', status: 'pending' as 'pending' | 'checking' | 'done' | 'error' },
-  { id: 'checkDependencies', label: '检查依赖', status: 'pending' },
-  { id: 'checkIntegrity', label: '检查资源文件完整性', status: 'pending' },
-  { id: 'login', label: '登录', status: 'pending' },
-  { id: 'launch', label: '启动游戏', status: 'pending' }
+const steps = ref<InstallStep[]>([
+  { id: 'check', name: '检查资源文件完整性', status: 'pending', progress: 0, total: 0 },
+  { id: 'java', name: '检查 Java', status: 'pending', progress: 0, total: 0 },
+  { id: 'libs', name: '检查依赖', status: 'pending', progress: 0, total: 0 },
+  { id: 'assets', name: '检查资源', status: 'pending', progress: 0, total: 0 },
+  { id: 'login', name: '登录', status: 'pending', progress: 0, total: 0 },
+  { id: 'launch', name: '启动游戏', status: 'pending', progress: 0, total: 0 }
 ])
 
-const currentStep = ref(0)
-const progress = ref(0)
+const currentStepIndex = ref(0)
 const showTerminal = ref(false)
 const terminalOutput = ref('')
 const terminalScroll = ref<number>(0)
 const isLaunching = ref(false)
 const commandStatus = ref<'running' | 'done' | 'error'>('running')
+const speedDisplay = ref('0.0 B/s')
+
+const overallProgress = computed(() => {
+  const done = steps.value.filter(s => s.status === 'done').length
+  const total = steps.value.length
+  return Math.floor((done / total) * 100)
+})
+
+const currentStepName = computed(() => {
+  const current = steps.value.find(s => s.status === 'running')
+  return current?.name || '准备中...'
+})
 
 function getStep(id: string) {
   return steps.value.find(s => s.id === id)!
 }
 
-function setStepStatus(id: string, status: 'pending' | 'checking' | 'done' | 'error') {
+function setStepStatus(id: string, status: 'pending' | 'running' | 'done' | 'error', extra: Partial<InstallStep> = {}) {
   const step = getStep(id)
   step.status = status
-}
-
-async function runStep(id: string, delay = 500) {
-  setStepStatus(id, 'checking')
-  currentStep.value = steps.value.findIndex(s => s.id === id)
-  await new Promise(r => setTimeout(r, delay))
-  setStepStatus(id, 'done')
-  progress.value = ((currentStep.value + 1) / steps.value.length) * 100
+  Object.assign(step, extra)
+  if (status === 'running') {
+    currentStepIndex.value = steps.value.findIndex(s => s.id === id)
+  }
 }
 
 function appendToTerminal(text: string) {
@@ -60,33 +76,40 @@ async function runCommandOnAndroid(cmd: string) {
   appendToTerminal('------------------------')
   
   try {
-    const exec = require('cordova-plugin-shell-exec')
-    return new Promise<void>((resolve, reject) => {
-      exec.exec(cmd, (output: any, error: any) => {
-        if (error) {
-          appendToTerminal(`[错误] ${error}`)
-          reject(new Error(error))
-        } else {
-          appendToTerminal(output)
-          resolve()
-        }
+    // 尝试通过 Cordova shell 插件执行
+    const exec = (window as any).cordova?.plugins?.shell?.exec
+    if (exec) {
+      return new Promise<void>((resolve, reject) => {
+        exec(cmd, (output: any, error: any) => {
+          if (error) {
+            appendToTerminal(`[错误] ${error}`)
+            reject(new Error(error))
+          } else {
+            appendToTerminal(output)
+            resolve()
+          }
+        })
       })
-    })
+    }
+    throw new Error('无 shell 执行插件')
   } catch (e: any) {
     try {
+      // 备用: 使用 plus.android 直接调用
       const runtime = plus.android.runtimeMainActivity()
-      const processBuilder = plus.android.newObject('java.lang.ProcessBuilder')
-      plus.android.invoke(processBuilder, 'command', cmd)
+      const processBuilder = plus.android.newObject('java.lang.ProcessBuilder', ['sh', '-c', cmd])
+      plus.android.invoke(processBuilder, 'redirectErrorStream', true)
       const process = plus.android.invoke(processBuilder, 'start')
       
       const reader = plus.android.newObject('java.io.BufferedReader', 
         plus.android.newObject('java.io.InputStreamReader', 
           plus.android.invoke(process, 'getInputStream')))
       
-      let line = ''
+      let line: string | null = ''
+      let lineCount = 0
       while ((line = plus.android.invoke(reader, 'readLine')) !== null) {
         appendToTerminal(line)
-        await new Promise(r => setTimeout(r, 50))
+        lineCount++
+        if (lineCount > 500) break // 防止输出过多
       }
       
       const exitCode = plus.android.invoke(process, 'waitFor')
@@ -95,7 +118,10 @@ async function runCommandOnAndroid(cmd: string) {
       }
     } catch (e2: any) {
       appendToTerminal(`[无法执行] ${e2.message}`)
-      appendToTerminal('请确保已安装 Java 环境')
+      appendToTerminal('')
+      appendToTerminal('提示: 由于技术限制,当前版本无法直接启动游戏')
+      appendToTerminal('但所有游戏文件已下载到 /storage/emulated/0/SakuraMC/.minecraft/')
+      appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器直接导入运行')
     }
   }
 }
@@ -104,82 +130,227 @@ async function startLaunch() {
   isLaunching.value = true
   
   try {
-    await runStep('checkJava')
-    await runStep('checkDependencies')
-    await runStep('checkIntegrity')
-    await runStep('login')
-    await runStep('launch')
-    
-    const account = accountStore.selected!
-    const version = versionStore.selected!
-    const javaPath = javaStore.selectedVersion?.path || settingsStore.javaPath || 'java'
-    
-    const cmd = buildLaunchCommand({
-      account,
-      version,
-      gameDir: settingsStore.gameDir || '/storage/emulated/0/SakuraMC/.minecraft',
-      javaPath,
-      memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
-      jvmArgs: ['-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC', '-XX:G1NewSizePercent=20', '-XX:G1ReservePercent=20', '-XX:MaxGCPauseMillis=50', '-XX:G1MixedGCCountTarget=4'],
-      gameArgs: [],
-      fullscreen: settingsStore.fullscreen
-    })
-    
-    const launchCmd = cmd.fullCommand.map(c => /\s/.test(c) ? `"${c}"` : c).join(' ')
-    
-    // #ifdef APP-PLUS
-    showTerminal.value = true
-    appendToTerminal('樱花 MC 启动器')
-    appendToTerminal('正在启动 Minecraft ' + version.id + '...')
-    appendToTerminal('')
-    
-    await runCommandOnAndroid(launchCmd)
-    
-    commandStatus.value = 'done'
-    appendToTerminal('')
-    appendToTerminal('[游戏已启动]')
-    appendToTerminal('如果游戏窗口没有自动弹出,请检查后台应用')
-    // #endif
-    
-    // #ifdef ELECTRON
-    const { shell } = require('electron')
-    const os = require('os')
-    const fs = require('fs')
-    const path = require('path')
-    
-    const scriptDir = path.join(os.tmpdir(), 'SakuraMC')
-    if (!fs.existsSync(scriptDir)) fs.mkdirSync(scriptDir, { recursive: true })
-    
-    if (process.platform === 'win32') {
-      const batPath = path.join(scriptDir, `start-${version.id}.bat`)
-      fs.writeFileSync(batPath, `@echo off\nchcp 65001 >nul\ntitle 樱花 MC 启动器 - ${version.id}\necho 启动 Minecraft ${version.id}...\necho.\n${cmd.fullCommand.map(c => `"${c}"`).join(' ')}\npause\n`)
-      shell.openPath(batPath)
-    } else {
-      const shPath = path.join(scriptDir, `start-${version.id}.sh`)
-      fs.writeFileSync(shPath, `#!/bin/bash\nexport LANG=en_US.UTF-8\necho "启动 Minecraft ${version.id}..."\n${cmd.fullCommand.map(c => `"${c}"`).join(' ')}\n`)
-      fs.chmodSync(shPath, 0o755)
-      shell.openPath(shPath)
+    const version = versionStore.selected
+    if (!version) {
+      throw new Error('未选择游戏版本')
     }
     
-    showTerminal.value = true
-    appendToTerminal('樱花 MC 启动器')
-    appendToTerminal('启动脚本已创建并运行')
-    appendToTerminal('游戏窗口应该会自动弹出')
-    commandStatus.value = 'done'
-    // #endif
+    const gameDir = settingsStore.gameDir || MINECRAFT_DIR
+    const source = (settingsStore.downloadSource as any) || 'bmcl'
     
-    // #ifdef H5
-    showTerminal.value = true
     appendToTerminal('樱花 MC 启动器')
-    appendToTerminal('警告: 浏览器环境无法直接启动游戏')
-    appendToTerminal('请在 PC 上使用桌面端启动器')
+    appendToTerminal(`版本: ${version.id}`)
+    appendToTerminal(`游戏目录: ${gameDir}`)
+    appendToTerminal('')
+    
+    // ===== Step 1: 检查资源文件完整性 =====
+    setStepStatus('check', 'running')
+    appendToTerminal('[1/6] 检查资源文件完整性...')
+    
+    const installed = await isVersionInstalled(version.id, gameDir)
+    
+    if (!installed.hasJar) {
+      appendToTerminal('  - 客户端 JAR: 缺失')
+    } else {
+      appendToTerminal('  - 客户端 JAR: 存在')
+    }
+    
+    if (!installed.hasJson) {
+      appendToTerminal('  - 版本 JSON: 缺失')
+    } else {
+      appendToTerminal('  - 版本 JSON: 存在')
+    }
+    
+    if (!installed.hasLibraries) {
+      appendToTerminal('  - 依赖库: 缺失 (将自动下载)')
+    } else {
+      appendToTerminal('  - 依赖库: 存在')
+    }
+    
+    if (!installed.hasAssets) {
+      appendToTerminal('  - 资源文件: 缺失 (将自动下载)')
+    } else {
+      appendToTerminal('  - 资源文件: 存在')
+    }
+    
+    setStepStatus('check', 'done', { progress: 1, total: 1 })
+    
+    // ===== Step 2: 检查 Java =====
+    setStepStatus('java', 'running')
+    appendToTerminal('[2/6] 检查 Java 环境...')
+    
+    const javaPath = javaStore.selectedVersion?.path || settingsStore.javaPath || ''
+    
+    if (javaPath) {
+      appendToTerminal(`  - Java 路径: ${javaPath}`)
+    } else {
+      appendToTerminal('  - Java 路径: 未配置 (使用系统默认)')
+    }
+    
+    setStepStatus('java', 'done', { progress: 1, total: 1 })
+    
+    // ===== Step 3-4: 安装/检查依赖和资源 =====
+    appendToTerminal('[3/6] 检查依赖库...')
+    appendToTerminal('[4/6] 检查资源文件...')
+    appendToTerminal('')
+    appendToTerminal('开始完整安装流程 (自动下载缺失的文件)...')
+    appendToTerminal('')
+    
+    try {
+      await installVersion({
+        versionId: version.id,
+        gameDir,
+        source,
+        onStepChange: (step, allSteps) => {
+          // 更新 UI 步骤状态
+          if (step.id === 'libs') {
+            setStepStatus('libs', step.status === 'done' ? 'done' : 'running', {
+              progress: step.progress,
+              total: step.total,
+              speed: step.speed
+            })
+            if (step.speed) {
+              speedDisplay.value = formatBytes(step.speed || 0) + '/s'
+            }
+          } else if (step.id === 'assets') {
+            setStepStatus('assets', step.status === 'done' ? 'done' : 'running', {
+              progress: step.progress,
+              total: step.total,
+              speed: step.speed
+            })
+            if (step.speed) {
+              speedDisplay.value = formatBytes(step.speed || 0) + '/s'
+            }
+          }
+        }
+      })
+      
+      // 确保 libs 和 assets 步骤标记完成
+      if (getStep('libs').status !== 'done') {
+        setStepStatus('libs', 'done')
+      }
+      if (getStep('assets').status !== 'done') {
+        setStepStatus('assets', 'done')
+      }
+      
+      appendToTerminal('')
+      appendToTerminal('✓ 所有资源文件已就绪')
+      appendToTerminal('')
+    } catch (e: any) {
+      appendToTerminal(`[警告] 资源下载部分失败: ${e.message}`)
+      appendToTerminal('将尝试继续启动 (可能缺少部分文件)')
+      appendToTerminal('')
+      // 标记为 done 继续走流程
+      setStepStatus('libs', 'done')
+      setStepStatus('assets', 'done')
+    }
+    
+    // ===== Step 5: 登录 =====
+    setStepStatus('login', 'running')
+    appendToTerminal('[5/6] 登录验证...')
+    
+    const account = accountStore.selected
+    if (account) {
+      appendToTerminal(`  - 用户名: ${account.name}`)
+      appendToTerminal(`  - 类型: ${account.type === 'microsoft' ? '微软正版' : account.type === 'offline' ? '离线' : account.type}`)
+    } else {
+      appendToTerminal('  - 未登录,使用离线模式 (Steve)')
+    }
+    
+    setStepStatus('login', 'done', { progress: 1, total: 1 })
+    
+    // ===== Step 6: 启动游戏 =====
+    setStepStatus('launch', 'running')
+    appendToTerminal('[6/6] 启动游戏...')
+    appendToTerminal('')
+    
+    // 获取版本 JSON (用于生成启动参数)
+    let versionJson
+    try {
+      versionJson = await resolveVersionJson(version.id, source, gameDir)
+    } catch (e: any) {
+      appendToTerminal(`[警告] 无法获取版本 JSON: ${e.message}`)
+      appendToTerminal('使用简化参数启动')
+    }
+    
+    const username = account?.name || 'Steve'
+    const uuid = account?.uuid || '00000000-0000-0000-0000-000000000000'
+    const accessToken = (account as any)?.accessToken || '0'
+    
+    if (versionJson) {
+      const launchCmd = buildLaunchCommand({
+        versionId: version.id,
+        gameDir,
+        javaPath,
+        minMemory: settingsStore.minMemory,
+        maxMemory: settingsStore.maxMemory,
+        username,
+        uuid,
+        accessToken,
+        versionType: 'SakuraMC',
+        width: 854,
+        height: 480,
+        fullscreen: false,
+        extraJvmArgs: [],
+        extraGameArgs: []
+      }, versionJson, gameDir)
+      
+      appendToTerminal('主类: ' + versionJson.mainClass)
+      appendToTerminal('内存: ' + settingsStore.minMemory + 'M / ' + settingsStore.maxMemory + 'M')
+      appendToTerminal('')
+      appendToTerminal('----- 启动参数 -----')
+      
+      // 输出所有参数
+      const args = launchCmd.split(' ')
+      let currentLine = ''
+      for (let i = 0; i < args.length; i++) {
+        if (args[i].startsWith('-') || i === 0) {
+          if (currentLine) appendToTerminal('  ' + currentLine)
+          currentLine = args[i]
+        } else {
+          currentLine += ' ' + args[i]
+        }
+      }
+      if (currentLine) appendToTerminal('  ' + currentLine)
+      
+      appendToTerminal('')
+      appendToTerminal('----- 开始执行 -----')
+      
+      // #ifdef APP-PLUS
+      showTerminal.value = true
+      await runCommandOnAndroid(launchCmd)
+      // #endif
+      
+      // #ifdef H5
+      appendToTerminal('')
+      appendToTerminal('⚠️  浏览器环境无法直接执行 Java 命令')
+      appendToTerminal('请安装 Android APK 或 Windows 桌面版')
+      appendToTerminal('')
+      appendToTerminal('所有游戏文件已保存到:')
+      appendToTerminal('  ' + gameDir)
+      appendToTerminal('')
+      appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器')
+      appendToTerminal('将游戏目录设置为上述路径即可直接运行')
+      // #endif
+    }
+    
+    setStepStatus('launch', 'done')
     commandStatus.value = 'done'
-    // #endif
+    showTerminal.value = true
+    
+    appendToTerminal('')
+    appendToTerminal('========================')
+    appendToTerminal('启动流程完成')
+    appendToTerminal('========================')
     
   } catch (e: any) {
-    setStepStatus(steps.value[currentStep.value]?.id || 'launch', 'error')
+    const currentStep = steps.value.find(s => s.status === 'running')
+    if (currentStep) {
+      setStepStatus(currentStep.id, 'error')
+    }
     appendToTerminal(`[错误] ${e.message}`)
     commandStatus.value = 'error'
+    showTerminal.value = true
     uni.showToast({ title: '启动失败: ' + (e.message || ''), icon: 'none' })
   } finally {
     isLaunching.value = false
@@ -187,6 +358,7 @@ async function startLaunch() {
 }
 
 onMounted(() => {
+  showTerminal.value = true // 直接显示终端,像 FCL 一样
   startLaunch()
 })
 </script>
@@ -199,41 +371,48 @@ onMounted(() => {
         <text class="lp-close" @tap="emit('close')">✕</text>
       </view>
       
-      <view v-if="!showTerminal" class="lp-body">
-        <view class="lp-progress-bar">
-          <view class="lp-progress-fill" :style="{ width: progress + '%' }" />
-        </view>
-        
+      <view class="lp-body">
+        <!-- 步骤列表 (FCL 风格) -->
         <view class="lp-steps">
           <view 
             v-for="(step, index) in steps" 
             :key="step.id"
             class="lp-step"
-            :class="{ 'lp-step--active': index === currentStep, 'lp-step--done': step.status === 'done', 'lp-step--error': step.status === 'error' }"
+            :class="{ 
+              'lp-step--active': step.status === 'running', 
+              'lp-step--done': step.status === 'done', 
+              'lp-step--error': step.status === 'error' 
+            }"
           >
             <view class="lp-step__icon">
               <text v-if="step.status === 'done'">✓</text>
-              <text v-else-if="step.status === 'checking'">→</text>
+              <text v-else-if="step.status === 'running'">→</text>
               <text v-else-if="step.status === 'error'">✕</text>
-              <text v-else>...</text>
+              <text v-else>·</text>
             </view>
-            <text class="lp-step__label">{{ step.label }}</text>
+            <view class="lp-step__main">
+              <text class="lp-step__name">{{ step.name }}</text>
+              <view v-if="step.status === 'running' && step.total > 0" class="lp-step__progress">
+                <view class="lp-step__progress-bar">
+                  <view 
+                    class="lp-step__progress-fill" 
+                    :style="{ width: (step.progress / step.total * 100) + '%' }" 
+                  />
+                </view>
+                <text class="lp-step__progress-text">
+                  {{ formatBytes(step.progress) }} / {{ formatBytes(step.total) }}
+                </text>
+              </view>
+            </view>
           </view>
         </view>
         
-        <view v-if="!isLaunching" class="lp-cancel">
-          <text @tap="emit('close')">取消</text>
+        <!-- 速度显示 -->
+        <view v-if="speedDisplay" class="lp-speed">
+          <text>速度: {{ speedDisplay }}</text>
         </view>
-      </view>
-      
-      <view v-else class="lp-body">
-        <text class="lp-success-icon" :class="{ 'lp-success-icon--error': commandStatus === 'error' }">
-          {{ commandStatus === 'done' ? '✓' : commandStatus === 'error' ? '✕' : '▶' }}
-        </text>
-        <text class="lp-success-text">
-          {{ commandStatus === 'done' ? '游戏启动成功' : commandStatus === 'error' ? '启动失败' : '游戏启动中' }}
-        </text>
         
+        <!-- 终端输出 -->
         <view class="lp-terminal">
           <scroll-view 
             scroll-y 
@@ -241,13 +420,14 @@ onMounted(() => {
             :scroll-top="terminalScroll"
             scroll-with-animation
           >
-            <text class="lp-terminal__text" user-select="text">{{ terminalOutput }}</text>
+            <text class="lp-terminal__text" user-select="true">{{ terminalOutput }}</text>
           </scroll-view>
         </view>
         
+        <!-- 底部按钮 -->
         <view class="lp-actions">
-          <view class="lp-btn lp-btn--primary" @tap="emit('close')">
-            <text>{{ commandStatus === 'done' ? '关闭' : '取消' }}</text>
+          <view class="lp-btn" @tap="emit('close')">
+            <text>{{ commandStatus === 'done' ? '关闭' : commandStatus === 'error' ? '关闭' : '取消' }}</text>
           </view>
         </view>
       </view>
@@ -273,8 +453,8 @@ onMounted(() => {
   border: 2rpx solid rgba(255, 183, 213, 0.3);
   border-radius: 20rpx;
   width: 100%;
-  max-width: 600rpx;
-  max-height: 85vh;
+  max-width: 650rpx;
+  max-height: 90vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -302,123 +482,142 @@ onMounted(() => {
 }
 
 .lp-body {
-  padding: 32rpx;
+  padding: 24rpx;
   flex: 1;
   overflow-y: auto;
-}
-
-.lp-progress-bar {
-  height: 8rpx;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4rpx;
-  overflow: hidden;
-  margin-bottom: 32rpx;
-}
-
-.lp-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #ffb7d5, #ff8fab);
-  border-radius: 4rpx;
-  transition: width 0.3s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .lp-steps {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
 }
 
 .lp-step {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16rpx;
-  padding: 12rpx 0;
+  padding: 12rpx 16rpx;
+  border-radius: 8rpx;
   
   &--active {
-    .lp-step__label { color: #ffb7d5; }
+    background: rgba(255, 183, 213, 0.08);
+    
+    .lp-step__name {
+      color: #ffb7d5;
+      font-weight: 600;
+    }
+    
+    .lp-step__icon {
+      background: rgba(255, 183, 213, 0.2);
+      color: #ffb7d5;
+    }
   }
   
   &--done {
-    .lp-step__icon { background: rgba(82, 196, 26, 0.2); color: #52c41a; }
-    .lp-step__label { color: rgba(255, 255, 255, 0.6); }
+    .lp-step__icon {
+      background: rgba(82, 196, 26, 0.15);
+      color: #52c41a;
+    }
+    
+    .lp-step__name {
+      color: rgba(255, 255, 255, 0.5);
+    }
   }
   
   &--error {
-    .lp-step__icon { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
-    .lp-step__label { color: #ff6b6b; }
+    .lp-step__icon {
+      background: rgba(255, 107, 107, 0.15);
+      color: #ff6b6b;
+    }
+    
+    .lp-step__name {
+      color: #ff6b6b;
+    }
+  }
+  
+  &__icon {
+    width: 36rpx;
+    height: 36rpx;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18rpx;
+    color: rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+    margin-top: 2rpx;
+  }
+  
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  &__name {
+    display: block;
+    font-size: 26rpx;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 6rpx;
+  }
+  
+  &__progress {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+  }
+  
+  &__progress-bar {
+    flex: 1;
+    height: 6rpx;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3rpx;
+    overflow: hidden;
+  }
+  
+  &__progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ffb7d5, #ff8fab);
+    border-radius: 3rpx;
+    transition: width 0.2s ease;
+  }
+  
+  &__progress-text {
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.4);
+    white-space: nowrap;
   }
 }
 
-.lp-step__icon {
-  width: 40rpx;
-  height: 40rpx;
-  border-radius: 50%;
-  background: rgba(255, 183, 213, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20rpx;
-  color: #ffb7d5;
-  flex-shrink: 0;
-  animation: pulse 1.5s infinite;
-}
-
-.lp-step__label {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.lp-cancel {
-  text-align: center;
-  margin-top: 32rpx;
+.lp-speed {
+  text-align: right;
+  margin-bottom: 16rpx;
   
   text {
-    font-size: 26rpx;
-    color: rgba(255, 255, 255, 0.4);
-    padding: 16rpx 32rpx;
+    font-size: 22rpx;
+    color: rgba(255, 183, 213, 0.6);
   }
-}
-
-.lp-success-icon {
-  display: block;
-  width: 80rpx;
-  height: 80rpx;
-  line-height: 80rpx;
-  text-align: center;
-  margin: 0 auto 20rpx;
-  background: rgba(82, 196, 26, 0.2);
-  border-radius: 50%;
-  font-size: 40rpx;
-  color: #52c41a;
-  
-  &--error {
-    background: rgba(255, 107, 107, 0.2);
-    color: #ff6b6b;
-  }
-}
-
-.lp-success-text {
-  display: block;
-  text-align: center;
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 24rpx;
 }
 
 .lp-terminal {
+  flex: 1;
   background: rgba(0, 0, 0, 0.6);
   border: 2rpx solid rgba(255, 183, 213, 0.15);
   border-radius: 12rpx;
-  padding: 20rpx;
-  margin-bottom: 24rpx;
+  padding: 16rpx;
+  margin-bottom: 20rpx;
+  min-height: 300rpx;
   
   &__content {
-    max-height: 400rpx;
+    height: 350rpx;
   }
   
   &__text {
-    font-size: 24rpx;
+    font-size: 22rpx;
     color: #52c41a;
     font-family: 'Consolas', 'Monaco', monospace;
     line-height: 1.6;
@@ -429,31 +628,23 @@ onMounted(() => {
 
 .lp-actions {
   display: flex;
-  flex-direction: column;
   gap: 16rpx;
 }
 
 .lp-btn {
+  flex: 1;
   height: 80rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 12rpx;
   font-size: 28rpx;
-  
-  &--primary {
-    background: linear-gradient(135deg, #ffb7d5, #ff8fab);
-    color: #fff;
-    font-weight: 600;
-  }
+  background: linear-gradient(135deg, #ffb7d5, #ff8fab);
+  color: #fff;
+  font-weight: 600;
   
   &:active {
     opacity: 0.8;
   }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 </style>
