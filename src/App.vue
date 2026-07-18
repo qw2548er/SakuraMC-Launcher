@@ -12,6 +12,13 @@ onLaunch(() => {
   settings.load()
   account.load()
   frp.load()
+  
+  const firstRun = uni.getStorageSync('sakuram.firstrun.done')
+  if (!firstRun) {
+    setTimeout(() => {
+      uni.reLaunch({ url: '/pages/install/install' })
+    }, 100)
+  }
 })
 
 onShow(() => {

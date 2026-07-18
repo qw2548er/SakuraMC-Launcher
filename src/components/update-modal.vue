@@ -41,35 +41,39 @@ const bodyText = computed(() => {
   <view v-if="show && update" class="update-modal" @tap.self="close">
     <view class="update-modal__panel">
       <view class="update-modal__header">
-        <text class="update-modal__title">✨ 检测到新版本</text>
+        <text class="update-modal__title">检测到可更新的版本</text>
       </view>
       
       <view class="update-modal__info">
         <view class="update-modal__row">
           <text class="update-modal__label">版本</text>
-          <text class="update-modal__value update-modal__version">v{{ update.version }}</text>
-        </view>
-        <view class="update-modal__row">
+          <text class="update-modal__value">{{ update.name || 'v' + update.version }}</text>
           <text class="update-modal__label">类型</text>
           <text class="update-modal__value">{{ update.prerelease ? '测试版' : '正式版' }}</text>
-          <text class="update-modal__label" style="margin-left: 24rpx">日期</text>
+        </view>
+        <view class="update-modal__row">
+          <text class="update-modal__label">日期</text>
           <text class="update-modal__value">{{ publishDate }}</text>
         </view>
       </view>
 
       <view class="update-modal__section">
-        <text class="update-modal__section-title">📝 更新内容</text>
+        <text class="update-modal__section-title">描述</text>
         <scroll-view scroll-y class="update-modal__body">
           <text class="update-modal__body-text">{{ bodyText || '暂无更新说明' }}</text>
         </scroll-view>
       </view>
 
       <view class="update-modal__actions">
-        <view class="update-modal__action update-modal__action--ghost" @tap="ignore">
+        <view class="update-modal__action update-modal__action--ignore" @tap="ignore">
           <text>忽略此版本</text>
         </view>
-        <McButton variant="ghost" @click="close">取消</McButton>
-        <McButton glow @click="goUpdate">🎉 立即更新</McButton>
+        <view class="update-modal__action update-modal__action--cancel" @tap="close">
+          <text>取消</text>
+        </view>
+        <view class="update-modal__action update-modal__action--update" @tap="goUpdate">
+          <text>更新</text>
+        </view>
       </view>
     </view>
   </view>
@@ -79,7 +83,7 @@ const bodyText = computed(() => {
 .update-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.5);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -87,65 +91,59 @@ const bodyText = computed(() => {
   padding: 32rpx;
   
   &__panel {
-    background: linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 100%);
-    border: 2rpx solid rgba(216, 150, 255, 0.3);
-    border-radius: 28rpx;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 2rpx solid rgba(255, 183, 213, 0.5);
+    border-radius: 20rpx;
     width: 100%;
-    max-width: 640rpx;
-    max-height: 80vh;
+    max-width: 600rpx;
+    max-height: 75vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 0 60rpx rgba(216, 150, 255, 0.3);
+    box-shadow: 0 20rpx 60rpx rgba(255, 150, 200, 0.3);
   }
   
   &__header {
-    padding: 32rpx 32rpx 24rpx;
+    padding: 28rpx 32rpx 20rpx;
     text-align: center;
-    border-bottom: 2rpx solid rgba(216, 150, 255, 0.1);
+    border-bottom: 2rpx solid rgba(255, 183, 213, 0.3);
   }
   
   &__title {
-    font-size: 36rpx;
-    font-weight: 700;
-    color: #ffffff;
-    background: linear-gradient(135deg, #ffb7d5, #d896ff);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-size: 30rpx;
+    font-weight: 500;
+    color: #333;
   }
   
   &__info {
-    padding: 24rpx 32rpx;
+    padding: 20rpx 32rpx;
     display: flex;
     flex-direction: column;
-    gap: 12rpx;
+    gap: 10rpx;
   }
   
   &__row {
     display: flex;
     align-items: center;
-    gap: 16rpx;
+    gap: 12rpx;
   }
   
   &__label {
     font-size: 24rpx;
-    color: #b8a8d4;
+    color: #999;
     flex-shrink: 0;
   }
   
   &__value {
-    font-size: 26rpx;
-    color: #ffffff;
-    font-weight: 600;
-  }
-  
-  &__version {
-    font-size: 32rpx;
-    color: #ffb7d5;
+    font-size: 24rpx;
+    color: #555;
+    font-weight: 500;
+    flex-shrink: 0;
   }
   
   &__section {
-    padding: 0 32rpx 24rpx;
+    padding: 0 32rpx 20rpx;
     flex: 1;
     min-height: 0;
     display: flex;
@@ -153,40 +151,74 @@ const bodyText = computed(() => {
   }
   
   &__section-title {
-    font-size: 26rpx;
-    color: #d896ff;
-    font-weight: 600;
-    margin-bottom: 12rpx;
+    font-size: 24rpx;
+    color: #ff8fab;
+    font-weight: 500;
+    margin-bottom: 10rpx;
   }
   
   &__body {
     flex: 1;
-    background: rgba(15, 15, 26, 0.6);
-    border-radius: 16rpx;
-    padding: 20rpx;
-    max-height: 360rpx;
+    background: rgba(255, 183, 213, 0.15);
+    border-radius: 12rpx;
+    padding: 16rpx;
+    max-height: 300rpx;
   }
   
   &__body-text {
     font-size: 24rpx;
-    color: #b8a8d4;
+    color: #666;
     line-height: 1.8;
     white-space: pre-wrap;
   }
   
   &__actions {
-    padding: 24rpx 32rpx 32rpx;
+    padding: 16rpx 24rpx 28rpx;
     display: flex;
-    gap: 16rpx;
+    gap: 12rpx;
     align-items: center;
-    border-top: 2rpx solid rgba(216, 150, 255, 0.1);
+    justify-content: center;
   }
   
   &__action {
-    &--ghost {
+    padding: 14rpx 28rpx;
+    border-radius: 12rpx;
+    font-size: 26rpx;
+    text-align: center;
+    transition: all 0.2s;
+    
+    &--ignore {
+      color: #ff8fab;
+      background: transparent;
       font-size: 24rpx;
-      color: #6a5a8a;
-      padding: 12rpx 16rpx;
+      
+      text {
+        color: #ff8fab;
+      }
+    }
+    
+    &--cancel {
+      color: #888;
+      background: rgba(255, 183, 213, 0.2);
+      
+      text {
+        color: #888;
+      }
+    }
+    
+    &--update {
+      color: #fff;
+      background: linear-gradient(135deg, #ffb7d5, #ff8fab);
+      
+      text {
+        color: #fff;
+        font-weight: 500;
+      }
+    }
+    
+    &:active {
+      opacity: 0.8;
+      transform: scale(0.98);
     }
   }
 }

@@ -12,7 +12,6 @@ import McCard from '@/components/mc-card.vue'
 import McBadge from '@/components/mc-badge.vue'
 import GameIcon from '@/components/game-icon.vue'
 import NotDeveloped from '@/components/not-developed.vue'
-import AnnouncementBar from '@/components/announcement-bar.vue'
 import UpdateModal from '@/components/update-modal.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
@@ -26,11 +25,21 @@ const frpStore = useFrpStore()
 const settingsStore = useSettingsStore()
 const javaStore = useJavaStore()
 
+const activeNav = ref('home')
 const showLaunchModal = ref(false)
 const showCommand = ref('')
 const showUpdateModal = ref(false)
 const latestUpdate = ref<IAppUpdate | null>(null)
-const announcement = ref('🌸 欢迎使用樱花 MC 启动器 · v0.1.5 发布啦！修复下载真实性问题，添加更新检测功能 · 点击查看更多')
+const showAnnouncement = ref(true)
+
+const navItems = [
+  { id: 'home', icon: '🏠', label: '首页' },
+  { id: 'settings', icon: '🔧', label: '设置' },
+  { id: 'download', icon: '⬇️', label: '下载' },
+  { id: 'plus', icon: '➕', label: '添加' },
+  { id: 'frp', icon: '🌐', label: '穿透' },
+  { id: 'about', icon: '⚙️', label: '关于' }
+]
 
 onShow(() => {
   if (!versionStore.manifest) versionStore.loadManifest()
@@ -41,9 +50,31 @@ const selectedVersion = computed(() => versionStore.selected)
 const selectedAccount = computed(() => accountStore.selected)
 const onlineServers = computed(() => serverStore.servers.filter(s => s.status === 'online').length)
 const frpStatus = computed(() => frpStore.isLoggedIn ? (frpStore.tunnels.filter(t => t.online).length + '/' + frpStore.tunnels.length) : '未登录')
-const totalMemory = computed(() => settingsStore.maxMemory)
 const activeDownloads = computed(() => versionStore.activeDownloads)
 const selectedJava = computed(() => javaStore.selectedVersion)
+
+function navigateTo(id: string) {
+  activeNav.value = id
+  switch (id) {
+    case 'home':
+      break
+    case 'settings':
+      uni.switchTab({ url: '/pages/settings/settings' })
+      break
+    case 'download':
+      uni.navigateTo({ url: '/pages/versions/versions' })
+      break
+    case 'plus':
+      uni.showToast({ title: '未开发', icon: 'none' })
+      break
+    case 'frp':
+      uni.switchTab({ url: '/pages/frp/frp' })
+      break
+    case 'about':
+      uni.switchTab({ url: '/pages/settings/settings' })
+      break
+  }
+}
 
 function chooseAccount() {
   uni.navigateTo({ url: '/pages/accounts/accounts' })
@@ -60,8 +91,8 @@ function openFrp() {
 function openSettings() {
   uni.switchTab({ url: '/pages/settings/settings' })
 }
-function selectJava(id: string) {
-  javaStore.selectVersion(id)
+function openMods() {
+  uni.navigateTo({ url: '/pages/mods/mods' })
 }
 
 function startGame() {
@@ -154,7 +185,7 @@ onMounted(() => {
   versionStore.loadManifest()
   javaStore.load()
   settingsStore.load()
-  setTimeout(doCheckUpdate, 1500)
+  setTimeout(doCheckUpdate, 2000)
 })
 </script>
 
@@ -162,183 +193,174 @@ onMounted(() => {
   <view class="home">
     <UpdateModal v-model:show="showUpdateModal" :update="latestUpdate" @ignore="ignoreUpdate" />
     
+    <view class="home__bg">
+      <view class="home__bg-overlay" />
+    </view>
+    
     <view class="home__layout">
       <view class="home__sidebar">
-        <view class="java-list">
-          <text class="java-list__title">Java 版本</text>
+        <view class="sidebar-list">
           <view
-            v-for="j in javaStore.versions"
-            :key="j.id"
-            class="java-item"
-            :class="{ 'java-item--active': j.id === javaStore.selectedId }"
-            @tap="selectJava(j.id)"
+            v-for="item in navItems"
+            :key="item.id"
+            class="sidebar-item"
+            :class="{ 'sidebar-item--active': activeNav === item.id }"
+            @tap="navigateTo(item.id)"
           >
-            <view class="java-item__icon">☕</view>
-            <text class="java-item__name">{{ j.name }}</text>
-            <view v-if="j.id === javaStore.selectedId" class="java-item__dot" />
-          </view>
-          <view class="java-item java-item--add" @tap="openSettings">
-            <view class="java-item__icon">⚙️</view>
-            <text class="java-item__name">设置</text>
+            <text class="sidebar-item__icon">{{ item.icon }}</text>
           </view>
         </view>
       </view>
       
       <view class="home__main">
-        <AnnouncementBar :text="announcement" />
+        <view v-if="showAnnouncement" class="home__announcement">
+          <view class="announcement-content">
+            <text class="announcement__title">📢 公告：关于 v0.2.0</text>
+            <text class="announcement__text">樱花 MC 启动器 v0.2.0 发布啦！全新界面设计，内置 Java 运行环境，新增樱花穿透功能，点击查看更多更新内容。</text>
+          </view>
+          <view class="announcement__close" @tap="showAnnouncement = false">✕</view>
+        </view>
         
-        <view class="home__hero">
-          <view class="home__bg">
-            <view class="home__petal home__petal--1">🌸</view>
-            <view class="home__petal home__petal--2">🌸</view>
-            <view class="home__petal home__petal--3">🌸</view>
-          </view>
-          <view class="home__top">
-            <view class="home__brand">
-              <view class="home__logo">🌸</view>
-              <view>
-                <text class="home__title gradient-text">樱花 MC 启动器</text>
-                <text class="home__subtitle">Sakura · Minecraft · NAT-FRP</text>
+        <view class="home__content">
+          <view class="home__section">
+            <text class="home__section-title">快速访问</text>
+            <view class="quick-grid">
+              <view class="quick-tile" @tap="chooseAccount">
+                <view class="quick-tile__icon">👤</view>
+                <text class="quick-tile__label">账号</text>
+                <text class="quick-tile__sub">{{ accountStore.accounts.length }} 个</text>
+              </view>
+              <view class="quick-tile" @tap="chooseVersion">
+                <view class="quick-tile__icon">📦</view>
+                <text class="quick-tile__label">版本</text>
+                <text class="quick-tile__sub">{{ Object.keys(versionStore.installed).length }} 已装</text>
+              </view>
+              <view class="quick-tile" @tap="openMods">
+                <view class="quick-tile__icon">🧩</view>
+                <text class="quick-tile__label">模组</text>
+                <text class="quick-tile__sub">Mods</text>
+              </view>
+              <view class="quick-tile" @tap="openFrp">
+                <view class="quick-tile__icon">🌐</view>
+                <text class="quick-tile__label">穿透</text>
+                <text class="quick-tile__sub">{{ frpStatus }}</text>
               </view>
             </view>
-            <view class="home__top-right">
-              <text class="home__version-tag">v0.1.5</text>
+          </view>
+          
+          <view v-if="activeDownloads.length" class="home__section">
+            <view class="home__section-header">
+              <text class="home__section-title">下载任务 ({{ activeDownloads.length }})</text>
+              <text class="home__section-link" @tap="chooseVersion">查看全部</text>
+            </view>
+            <view v-for="d in activeDownloads" :key="d.id" class="download-item">
+              <view class="download-item__head">
+                <text class="download-item__name">{{ d.name }}</text>
+                <text class="download-item__pct">{{ Math.floor(d.downloaded / Math.max(d.total, 1) * 100) }}%</text>
+              </view>
+              <view class="download-item__bar">
+                <view class="download-item__fill" :style="{ width: (d.downloaded / Math.max(d.total, 1) * 100) + '%' }" />
+              </view>
+              <text class="download-item__sub">{{ formatBytes(d.downloaded) }} / {{ formatBytes(d.total) }}</text>
             </view>
           </view>
-
-          <McCard glow class="home__launch">
-            <view class="launch-row" @tap="chooseAccount">
-              <view class="launch-row__icon">
-                <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="100" variant="head" bordered />
-                <view v-else class="launch-row__placeholder">
-                  <text>👤</text>
+          
+          <view class="home__section">
+            <view class="home__section-header">
+              <text class="home__section-title">游戏设置</text>
+            </view>
+            <McCard>
+              <view class="setting-row" @tap="chooseAccount">
+                <view class="setting-row__main">
+                  <text class="setting-row__label">当前账号</text>
+                  <text class="setting-row__value">{{ selectedAccount?.username || '未设置' }}</text>
                 </view>
+                <text class="setting-row__arrow">›</text>
               </view>
-              <view class="launch-row__main">
-                <text class="launch-row__label">当前账号</text>
-                <text class="launch-row__value">{{ selectedAccount?.username || '点击登录' }}</text>
-                <text class="launch-row__sub">{{ selectedAccount?.type === 'microsoft' ? '微软账号' : selectedAccount?.type === 'offline' ? '离线账号' : '未登录' }}</text>
+              <view class="setting-row" @tap="chooseVersion">
+                <view class="setting-row__main">
+                  <text class="setting-row__label">游戏版本</text>
+                  <text class="setting-row__value">{{ selectedVersion?.id || '未选择' }}</text>
+                </view>
+                <text class="setting-row__arrow">›</text>
               </view>
-              <text class="launch-row__chevron">›</text>
-            </view>
-
-            <view class="launch-row" @tap="chooseVersion">
-              <view class="launch-row__icon">
-                <view class="launch-row__version-icon">⛏️</view>
+              <view class="setting-row" @tap="openSettings">
+                <view class="setting-row__main">
+                  <text class="setting-row__label">Java 版本</text>
+                  <text class="setting-row__value">{{ selectedJava?.name || '未配置' }} · 自动选择</text>
+                </view>
+                <text class="setting-row__arrow">›</text>
               </view>
-              <view class="launch-row__main">
-                <text class="launch-row__label">游戏版本</text>
-                <text class="launch-row__value">{{ selectedVersion?.id || '未选择' }} <text v-if="selectedVersion" class="launch-row__type">[{{ selectedVersion.type }}]</text></text>
-                <text class="launch-row__sub">{{ selectedVersion?.installed ? '已安装 · 可启动' : '未下载' }}</text>
+              <view class="setting-row" @tap="openSettings">
+                <view class="setting-row__main">
+                  <text class="setting-row__label">内存分配</text>
+                  <text class="setting-row__value">最小 {{ formatBytes(settingsStore.minMemory * 1024 * 1024) }} · 最大 {{ formatBytes(settingsStore.maxMemory * 1024 * 1024) }}</text>
+                </view>
+                <text class="setting-row__arrow">›</text>
               </view>
-              <text class="launch-row__chevron">›</text>
-            </view>
-
-            <view class="launch-row" @tap="openSettings">
-              <view class="launch-row__icon">
-                <view class="launch-row__java-icon">☕</view>
-              </view>
-              <view class="launch-row__main">
-                <text class="launch-row__label">Java 环境</text>
-                <text class="launch-row__value">{{ selectedJava?.name || '未配置' }}</text>
-                <text class="launch-row__sub">{{ selectedJava?.path ? selectedJava.path : '点击设置 Java 路径' }}</text>
-              </view>
-              <text class="launch-row__chevron">›</text>
-            </view>
-
-            <NotDeveloped variant="banner" feature="游戏启动" plan="v0.2.0" />
-            <view class="home__cta">
-              <McButton size="lg" glow block @click="startGame">▶ 启动游戏</McButton>
-              <text class="home__cta-tip">H5 端将生成启动命令 / 脚本, PC 端下载后双击运行</text>
-            </view>
-          </McCard>
-        </view>
-
-    <view class="home__content">
-      <view class="home__section">
-        <text class="home__section-title">快速访问</text>
-        <view class="quick-grid">
-          <view class="quick-tile" @tap="chooseAccount">
-            <view class="quick-tile__icon">👤</view>
-            <text class="quick-tile__label">账号</text>
-            <text class="quick-tile__sub">{{ accountStore.accounts.length }} 个</text>
+            </McCard>
           </view>
-          <view class="quick-tile" @tap="chooseVersion">
-            <view class="quick-tile__icon">📦</view>
-            <text class="quick-tile__label">版本</text>
-            <text class="quick-tile__sub">{{ Object.keys(versionStore.installed).length }} 已装</text>
-          </view>
-          <view class="quick-tile" @tap="openFrp">
-            <view class="quick-tile__icon">🌐</view>
-            <text class="quick-tile__label">穿透</text>
-            <text class="quick-tile__sub">{{ frpStatus }}</text>
-          </view>
-          <view class="quick-tile" @tap="openServer">
-            <view class="quick-tile__icon">🖥️</view>
-            <text class="quick-tile__label">服务器</text>
-            <text class="quick-tile__sub">{{ onlineServers }} 在线</text>
+          
+          <view v-if="frpStore.isLoggedIn" class="home__section">
+            <view class="home__section-header">
+              <text class="home__section-title">樱花穿透</text>
+              <text class="home__section-link" @tap="openFrp">详情</text>
+            </view>
+            <McCard>
+              <view class="frp-stat">
+                <text class="frp-stat__label">账号</text>
+                <text class="frp-stat__value">{{ frpStore.account?.userInfo?.username || frpStore.account?.username }}</text>
+              </view>
+              <view v-if="frpStore.traffic" class="frp-stat">
+                <text class="frp-stat__label">流量</text>
+                <text class="frp-stat__value">{{ formatBytes(frpStore.traffic.used) }} / {{ formatBytes(frpStore.traffic.total) }}</text>
+              </view>
+              <view class="frp-stat">
+                <text class="frp-stat__label">活跃隧道</text>
+                <text class="frp-stat__value">{{ frpStore.onlineTunnels.length }} / {{ frpStore.tunnels.length }}</text>
+              </view>
+            </McCard>
           </view>
         </view>
       </view>
-
-      <view v-if="activeDownloads.length" class="home__section">
-        <view class="home__section-header">
-          <text class="home__section-title">下载任务 ({{ activeDownloads.length }})</text>
-          <text class="home__section-link" @tap="chooseVersion">查看全部</text>
-        </view>
-        <view v-for="d in activeDownloads" :key="d.id" class="download-item">
-          <view class="download-item__head">
-            <text class="download-item__name">{{ d.name }}</text>
-            <text class="download-item__pct">{{ Math.floor(d.downloaded / Math.max(d.total, 1) * 100) }}%</text>
+      
+      <view class="home__right">
+        <view class="player-info">
+          <view class="player-info__avatar" @tap="chooseAccount">
+            <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="120" variant="head" />
+            <view v-else class="player-info__avatar-placeholder">
+              <text>👤</text>
+            </view>
           </view>
-          <view class="download-item__bar">
-            <view class="download-item__fill" :style="{ width: (d.downloaded / Math.max(d.total, 1) * 100) + '%' }" />
+          <text class="player-info__name">{{ selectedAccount?.username || '微软账户' }}</text>
+          <text class="player-info__hint" @tap="chooseAccount">点击切换账号</text>
+        </view>
+        
+        <view class="launch-section">
+          <NotDeveloped variant="banner" feature="游戏启动" plan="v0.2.0" />
+          <McButton size="lg" glow block @click="startGame" class="launch-btn">
+            🎮 启动游戏
+          </McButton>
+          <view class="launch-version" @tap="chooseVersion">
+            <view class="launch-version__icon">⛏️</view>
+            <view class="launch-version__info">
+              <text class="launch-version__name">{{ selectedVersion?.id || '未选择版本' }}</text>
+              <text class="launch-version__type">{{ selectedVersion?.type || '点击选择版本' }}</text>
+            </view>
+            <text class="launch-version__gear" @tap.stop="openSettings">⚙️</text>
           </view>
-          <text class="download-item__sub">{{ formatBytes(d.downloaded) }} / {{ formatBytes(d.total) }}</text>
-        </view>
-      </view>
-
-      <view class="home__section">
-        <view class="home__section-header">
-          <text class="home__section-title">服务器状态</text>
-          <text class="home__section-link" @tap="openServer">管理</text>
-        </view>
-        <view v-for="s in serverStore.servers.slice(0, 3)" :key="s.id" class="server-item" @tap="openServer">
-          <view class="server-item__main">
-            <text class="server-item__name">{{ s.name }}</text>
-            <text class="server-item__host">{{ s.host }}:{{ s.port }} · {{ s.type }}</text>
+          <view class="launch-actions">
+            <view class="launch-action" @tap="chooseVersion">
+              <text class="launch-action__text">管理版本</text>
+            </view>
+            <view class="launch-action" @tap="openMods">
+              <text class="launch-action__text">模组管理</text>
+            </view>
           </view>
-          <McBadge :status="s.status" />
         </view>
-      </view>
-
-      <view v-if="frpStore.isLoggedIn" class="home__section">
-        <view class="home__section-header">
-          <text class="home__section-title">樱花穿透</text>
-          <text class="home__section-link" @tap="openFrp">详情</text>
-        </view>
-        <view class="frp-stat">
-          <text class="frp-stat__label">账号</text>
-          <text class="frp-stat__value">{{ frpStore.account?.userInfo?.username || frpStore.account?.username }}</text>
-        </view>
-        <view v-if="frpStore.traffic" class="frp-stat">
-          <text class="frp-stat__label">流量</text>
-          <text class="frp-stat__value">{{ formatBytes(frpStore.traffic.used) }} / {{ formatBytes(frpStore.traffic.total) }}</text>
-        </view>
-        <view class="frp-stat">
-          <text class="frp-stat__label">活跃隧道</text>
-          <text class="frp-stat__value">{{ frpStore.onlineTunnels.length }} / {{ frpStore.tunnels.length }}</text>
-        </view>
-      </view>
-
-      <view class="home__footer">
-        <text class="home__footer-text">樱花穿透 © 2024 · Made with 💖 for MC</text>
-        <text class="home__footer-text">Powered by Uniapp Vue3</text>
       </view>
     </view>
-    </view>
-    </view>
-
+    
     <view v-if="showLaunchModal" class="home__modal" @tap.self="showLaunchModal = false">
       <view class="home__modal-panel">
         <view class="home__modal-header">
@@ -364,144 +386,256 @@ onMounted(() => {
 <style lang="scss" scoped>
 .home {
   min-height: 100vh;
-  background: linear-gradient(180deg, #1a0f2e 0%, #0f0f1a 100%);
   position: relative;
   overflow: hidden;
+  
+  &__bg {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 50%, #1a0f2e 100%);
+    
+    &-overlay {
+      position: absolute;
+      inset: 0;
+      background: 
+        radial-gradient(circle at 30% 20%, rgba(255, 183, 213, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 70% 80%, rgba(216, 150, 255, 0.1) 0%, transparent 50%);
+    }
+  }
   
   &__layout {
     display: flex;
     min-height: 100vh;
+    position: relative;
+    z-index: 1;
   }
   
   &__sidebar {
-    width: 180rpx;
+    width: 100rpx;
     flex-shrink: 0;
-    background: rgba(15, 15, 26, 0.8);
-    border-right: 2rpx solid rgba(216, 150, 255, 0.1);
-    padding: 24rpx 0;
+    background: rgba(26, 15, 46, 0.8);
+    backdrop-filter: blur(20px);
+    border-right: 2rpx solid rgba(216, 150, 255, 0.15);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32rpx 0;
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
     z-index: 10;
-    overflow-y: auto;
   }
   
   &__main {
     flex: 1;
-    margin-left: 180rpx;
+    margin-left: 100rpx;
+    margin-right: 320rpx;
+    padding: 24rpx 32rpx 32rpx;
     min-height: 100vh;
+    overflow-y: auto;
   }
   
-  &__bg {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
+  &__right {
+    width: 320rpx;
+    flex-shrink: 0;
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(26, 15, 46, 0.6);
+    backdrop-filter: blur(20px);
+    border-left: 2rpx solid rgba(216, 150, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    padding: 40rpx 24rpx 32rpx;
+    z-index: 10;
   }
-  &__petal {
-    position: absolute;
-    font-size: 60rpx;
-    opacity: 0.15;
-    animation: float 8s ease-in-out infinite;
-    &--1 { top: 80rpx; left: 40rpx; animation-delay: 0s; }
-    &--2 { top: 200rpx; right: 60rpx; animation-delay: 2s; }
-    &--3 { top: 480rpx; left: 80rpx; animation-delay: 4s; }
+  
+  &__announcement {
+    background: rgba(255, 183, 213, 0.15);
+    border: 2rpx solid rgba(255, 183, 213, 0.3);
+    border-radius: 16rpx;
+    padding: 20rpx 24rpx;
+    margin-bottom: 24rpx;
+    display: flex;
+    align-items: flex-start;
+    gap: 16rpx;
   }
-  &__hero { padding: 40rpx 32rpx 0; position: relative; }
-  &__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32rpx; }
-  &__brand { display: flex; align-items: center; gap: 16rpx; }
-  &__logo {
-    width: 80rpx; height: 80rpx;
-    background: linear-gradient(135deg, #ffb7d5, #d896ff);
-    border-radius: 24rpx;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 44rpx;
-    box-shadow: 0 8rpx 24rpx rgba(216, 150, 255, 0.4);
+  
+  &__section {
+    margin-bottom: 28rpx;
   }
-  &__title { font-size: 40rpx; font-weight: 700; display: block; }
-  &__subtitle { font-size: 22rpx; color: #b8a8d4; display: block; }
-  &__version-tag {
-    font-size: 22rpx;
-    color: #6a5a8a;
-    padding: 6rpx 16rpx;
-    background: rgba(106, 90, 138, 0.2);
-    border-radius: 9999rpx;
+  
+  &__section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16rpx;
   }
-  &__cta { margin-top: 24rpx; }
-  &__cta-tip { display: block; font-size: 22rpx; color: #6a5a8a; text-align: center; margin-top: 12rpx; }
-  &__content { padding: 32rpx; padding-bottom: 180rpx; }
-  &__section { margin-bottom: 32rpx; }
-  &__section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
-  &__section-title { font-size: 30rpx; font-weight: 700; color: #ffffff; }
-  &__section-link { font-size: 24rpx; color: #d896ff; }
-  &__footer { text-align: center; padding: 40rpx 0; }
-  &__footer-text { display: block; font-size: 22rpx; color: #6a5a8a; line-height: 1.6; }
+  
+  &__section-title {
+    font-size: 28rpx;
+    font-weight: 700;
+    color: #ffffff;
+  }
+  
+  &__section-link {
+    font-size: 24rpx;
+    color: #ffb7d5;
+  }
+  
   &__modal {
-    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7);
-    z-index: 999; display: flex; align-items: center; justify-content: center; padding: 32rpx;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32rpx;
   }
+  
   &__modal-panel {
-    background: #1a0f2e; border: 2rpx solid rgba(216, 150, 255, 0.2);
-    border-radius: 32rpx; max-width: 720rpx; width: 100%; max-height: 85vh; overflow: hidden;
-    display: flex; flex-direction: column;
+    background: #1a0f2e;
+    border: 2rpx solid rgba(216, 150, 255, 0.2);
+    border-radius: 32rpx;
+    max-width: 720rpx;
+    width: 100%;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
+  
   &__modal-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 24rpx 32rpx; border-bottom: 2rpx solid rgba(216, 150, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24rpx 32rpx;
+    border-bottom: 2rpx solid rgba(216, 150, 255, 0.1);
   }
-  &__modal-title { font-size: 32rpx; font-weight: 700; color: #ffffff; }
-  &__modal-close { font-size: 32rpx; color: #b8a8d4; padding: 8rpx 16rpx; }
-  &__modal-body { padding: 32rpx; overflow-y: auto; }
-  &__modal-tip { display: block; font-size: 24rpx; color: #b8a8d4; margin-bottom: 16rpx; line-height: 1.6; }
+  
+  &__modal-title {
+    font-size: 32rpx;
+    font-weight: 700;
+    color: #ffffff;
+  }
+  
+  &__modal-close {
+    font-size: 32rpx;
+    color: #b8a8d4;
+    padding: 8rpx 16rpx;
+  }
+  
+  &__modal-body {
+    padding: 32rpx;
+    overflow-y: auto;
+  }
+  
+  &__modal-tip {
+    display: block;
+    font-size: 24rpx;
+    color: #b8a8d4;
+    margin-bottom: 16rpx;
+    line-height: 1.6;
+  }
+  
   &__modal-cmd-box {
-    background: #0f0f1a; padding: 24rpx; border-radius: 16rpx;
+    background: #0f0f1a;
+    padding: 24rpx;
+    border-radius: 16rpx;
     border: 2rpx solid rgba(216, 150, 255, 0.1);
-    max-height: 360rpx; overflow-y: auto;
+    max-height: 360rpx;
+    overflow-y: auto;
   }
-  &__modal-cmd { font-size: 22rpx; color: #b8a8d4; font-family: monospace; word-break: break-all; line-height: 1.6; }
-  &__modal-actions { display: flex; flex-direction: column; gap: 16rpx; margin-top: 24rpx; }
+  
+  &__modal-cmd {
+    font-size: 22rpx;
+    color: #b8a8d4;
+    font-family: monospace;
+    word-break: break-all;
+    line-height: 1.6;
+  }
+  
+  &__modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+    margin-top: 24rpx;
+  }
 }
 
-.launch-row {
-  display: flex; align-items: center; gap: 24rpx;
-  padding: 20rpx 0;
-  border-bottom: 2rpx solid rgba(216, 150, 255, 0.08);
-  &:last-of-type { border-bottom: none; }
-  &__icon { width: 100rpx; height: 100rpx; flex-shrink: 0; }
-  &__placeholder {
-    width: 100rpx; height: 100rpx;
-    background: rgba(45, 27, 78, 0.6);
-    border: 2rpx dashed rgba(216, 150, 255, 0.3);
-    border-radius: 16rpx;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 40rpx;
+.sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  width: 100%;
+  align-items: center;
+}
+
+.sidebar-item {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  
+  &--active {
+    background: linear-gradient(135deg, rgba(255, 183, 213, 0.3), rgba(216, 150, 255, 0.3));
+    box-shadow: 0 0 20rpx rgba(255, 183, 213, 0.3);
   }
-  &__version-icon, &__server-icon, &__java-icon {
-    width: 100rpx; height: 100rpx;
-    background: linear-gradient(135deg, #2d1b4e, #1a0f2e);
-    border-radius: 16rpx;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 48rpx;
-    border: 2rpx solid rgba(216, 150, 255, 0.2);
+  
+  &__icon {
+    font-size: 32rpx;
   }
-  &__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
-  &__label { font-size: 22rpx; color: #b8a8d4; }
-  &__value { font-size: 32rpx; color: #ffffff; font-weight: 700; }
-  &__type { font-size: 22rpx; color: #d896ff; font-weight: 400; }
-  &__sub { font-size: 22rpx; color: #6a5a8a; }
-  &__chevron { font-size: 48rpx; color: #6a5a8a; flex-shrink: 0; }
+}
+
+.announcement-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.announcement__title {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #ffb7d5;
+  margin-bottom: 8rpx;
+}
+
+.announcement__text {
+  display: block;
+  font-size: 24rpx;
+  color: #b8a8d4;
+  line-height: 1.5;
+}
+
+.announcement__close {
+  font-size: 24rpx;
+  color: #6a5a8a;
+  padding: 4rpx 12rpx;
+  flex-shrink: 0;
 }
 
 .quick-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 16rpx;
 }
+
 .quick-tile {
   background: rgba(45, 27, 78, 0.6);
   border: 2rpx solid rgba(216, 150, 255, 0.15);
   border-radius: 20rpx;
   padding: 24rpx 12rpx;
-  display: flex; flex-direction: column; align-items: center; gap: 8rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  
   &__icon { font-size: 48rpx; }
   &__label { font-size: 24rpx; color: #ffffff; font-weight: 600; }
   &__sub { font-size: 20rpx; color: #6a5a8a; }
@@ -513,6 +647,7 @@ onMounted(() => {
   border-radius: 16rpx;
   padding: 20rpx;
   margin-bottom: 12rpx;
+  
   &__head { display: flex; justify-content: space-between; margin-bottom: 12rpx; }
   &__name { font-size: 26rpx; color: #ffffff; font-weight: 600; }
   &__pct { font-size: 24rpx; color: #d896ff; font-weight: 700; }
@@ -521,96 +656,148 @@ onMounted(() => {
   &__sub { display: block; font-size: 22rpx; color: #6a5a8a; margin-top: 8rpx; }
 }
 
-.server-item {
-  display: flex; align-items: center; justify-content: space-between;
-  background: rgba(45, 27, 78, 0.6);
-  border: 2rpx solid rgba(216, 150, 255, 0.1);
-  border-radius: 16rpx;
-  padding: 20rpx 24rpx;
-  margin-bottom: 12rpx;
-  &__name { font-size: 28rpx; color: #ffffff; font-weight: 600; }
-  &__host { font-size: 22rpx; color: #b8a8d4; display: block; margin-top: 4rpx; }
-}
-
-.frp-stat {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16rpx 24rpx;
-  background: rgba(45, 27, 78, 0.4);
-  border-radius: 12rpx;
-  margin-bottom: 8rpx;
-  &__label { font-size: 26rpx; color: #b8a8d4; }
-  &__value { font-size: 26rpx; color: #ffffff; font-weight: 600; }
-}
-
-.java-list {
+.setting-row {
   display: flex;
-  flex-direction: column;
-  padding: 0 12rpx;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid rgba(216, 150, 255, 0.08);
   
-  &__title {
-    font-size: 22rpx;
-    color: #6a5a8a;
-    text-align: center;
-    padding: 12rpx 0 20rpx;
-    letter-spacing: 2rpx;
-  }
+  &:last-child { border-bottom: none; }
+  
+  &__main { flex: 1; min-width: 0; }
+  &__label { font-size: 24rpx; color: #b8a8d4; display: block; }
+  &__value { font-size: 28rpx; color: #ffffff; font-weight: 600; display: block; margin-top: 4rpx; }
+  &__arrow { font-size: 32rpx; color: #6a5a8a; flex-shrink: 0; }
 }
 
-.java-item {
+.player-info {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6rpx;
-  padding: 16rpx 8rpx;
-  border-radius: 16rpx;
-  margin-bottom: 8rpx;
-  position: relative;
-  transition: all 0.2s;
+  margin-bottom: 32rpx;
   
-  &--active {
-    background: linear-gradient(135deg, rgba(255, 183, 213, 0.2), rgba(216, 150, 255, 0.2));
-    border: 2rpx solid rgba(216, 150, 255, 0.3);
+  &__avatar {
+    width: 120rpx;
+    height: 120rpx;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 4rpx solid rgba(255, 183, 213, 0.5);
+    margin-bottom: 16rpx;
+    box-shadow: 0 0 30rpx rgba(255, 183, 213, 0.3);
     
-    .java-item__name {
-      color: #ffb7d5;
+    image {
+      width: 100%;
+      height: 100%;
     }
   }
   
-  &--add {
-    margin-top: 16rpx;
-    opacity: 0.6;
-    
-    &:active {
-      opacity: 1;
-    }
-  }
-  
-  &__icon {
-    font-size: 36rpx;
+  &__avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    background: rgba(45, 27, 78, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48rpx;
   }
   
   &__name {
-    font-size: 22rpx;
-    color: #b8a8d4;
-    font-weight: 600;
-    text-align: center;
+    font-size: 30rpx;
+    font-weight: 700;
+    color: #ffb7d5;
+    margin-bottom: 4rpx;
   }
   
-  &__dot {
-    position: absolute;
-    right: 8rpx;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 10rpx;
-    height: 10rpx;
-    background: #ffb7d5;
-    border-radius: 50%;
-    box-shadow: 0 0 12rpx rgba(255, 183, 213, 0.8);
+  &__hint {
+    font-size: 22rpx;
+    color: #6a5a8a;
   }
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  50% { transform: translateY(-40rpx) rotate(180deg); }
+.launch-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.launch-btn {
+  margin-bottom: 8rpx !important;
+}
+
+.launch-version {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  background: rgba(45, 27, 78, 0.6);
+  border: 2rpx solid rgba(216, 150, 255, 0.2);
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  
+  &__icon {
+    font-size: 36rpx;
+    flex-shrink: 0;
+  }
+  
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  &__name {
+    display: block;
+    font-size: 26rpx;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  &__type {
+    display: block;
+    font-size: 20rpx;
+    color: #6a5a8a;
+    margin-top: 2rpx;
+  }
+  
+  &__gear {
+    font-size: 28rpx;
+    flex-shrink: 0;
+    padding: 8rpx;
+  }
+}
+
+.launch-actions {
+  display: flex;
+  gap: 12rpx;
+}
+
+.launch-action {
+  flex: 1;
+  background: rgba(45, 27, 78, 0.4);
+  border: 2rpx solid rgba(216, 150, 255, 0.15);
+  border-radius: 12rpx;
+  padding: 16rpx;
+  text-align: center;
+  
+  &__text {
+    font-size: 22rpx;
+    color: #b8a8d4;
+  }
+}
+
+.frp-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid rgba(216, 150, 255, 0.08);
+  
+  &:last-child { border-bottom: none; }
+  
+  &__label { font-size: 26rpx; color: #b8a8d4; }
+  &__value { font-size: 26rpx; color: #ffffff; font-weight: 600; }
 }
 </style>

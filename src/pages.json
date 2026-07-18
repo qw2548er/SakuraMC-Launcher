@@ -9,6 +9,13 @@
       }
     },
     {
+      "path": "pages/install/install",
+      "style": {
+        "navigationBarTitleText": "安装引导",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/accounts/accounts",
       "style": {
         "navigationBarTitleText": "账号管理"
