@@ -40,6 +40,40 @@ const memMin = ref(settingsStore.minMemory)
 const memMax = ref(settingsStore.maxMemory)
 const memSlider = ref(settingsStore.maxMemory)
 
+// 路径配置
+const showPathModal = ref(false)
+const pathConfigKey = ref('')
+const pathConfigLabel = ref('')
+const pathConfigDraft = ref('')
+
+const pathConfigs = computed(() => [
+  { key: 'gameDir', label: 'SakuraMC 游戏目录', icon: '📁', value: settingsStore.gameDir || defaultGameDir.value },
+  { key: 'versionsDir', label: '版本目录', icon: '📦', value: settingsStore.versionsDir || `${settingsStore.gameDir || defaultGameDir.value}/versions` },
+  { key: 'modsDir', label: '模组目录', icon: '🧩', value: settingsStore.modsDir || `${settingsStore.gameDir || defaultGameDir.value}/mods` },
+  { key: 'resourcepacksDir', label: '资源包目录', icon: '🎨', value: settingsStore.resourcepacksDir || `${settingsStore.gameDir || defaultGameDir.value}/resourcepacks` },
+  { key: 'savesDir', label: '存档目录', icon: '💾', value: settingsStore.savesDir || `${settingsStore.gameDir || defaultGameDir.value}/saves` },
+  { key: 'screenshotsDir', label: '截图目录', icon: '📷', value: settingsStore.screenshotsDir || `${settingsStore.gameDir || defaultGameDir.value}/screenshots` },
+  { key: 'logsDir', label: '日志目录', icon: '📝', value: settingsStore.logsDir || `${settingsStore.gameDir || defaultGameDir.value}/logs` },
+  { key: 'shaderpacksDir', label: '光影包目录', icon: '✨', value: settingsStore.shaderpacksDir || `${settingsStore.gameDir || defaultGameDir.value}/shaderpacks` }
+])
+
+function openPathConfig(key: string, label: string) {
+  pathConfigKey.value = key
+  pathConfigLabel.value = label
+  const current = (settingsStore as any)[key]
+  const defaultVal = pathConfigs.value.find(p => p.key === key)?.value || ''
+  pathConfigDraft.value = current || defaultVal
+  showPathModal.value = true
+}
+
+function savePathConfig() {
+  if (pathConfigKey.value && pathConfigDraft.value) {
+    settingsStore.update({ [pathConfigKey.value]: pathConfigDraft.value } as any)
+    uni.showToast({ title: '路径已保存', icon: 'success' })
+  }
+  showPathModal.value = false
+}
+
 const totalMemory = computed(() => {
   // #ifdef APP-PLUS
   return plus.device.memory * 1024 || 4096
@@ -110,7 +144,7 @@ const sourceOptions = [
 ]
 
 function openVersions() {
-  uni.navigateTo({ url: '/pages/version/version' })
+  uni.navigateTo({ url: '/pages/versions/versions' })
 }
 
 function openDownload() {
@@ -259,6 +293,23 @@ function selectJavaVersion(ver: string) {
             />
           </view>
         </view>
+        
+        <view class="setting-section">
+          <text class="setting-section__title">路径配置</text>
+          <view 
+            v-for="cfg in pathConfigs" 
+            :key="cfg.key"
+            class="setting-item"
+            @tap="openPathConfig(cfg.key, cfg.label)"
+          >
+            <view class="setting-item__icon">{{ cfg.icon }}</view>
+            <view class="setting-item__main">
+              <text class="setting-item__label">{{ cfg.label }}</text>
+              <text class="setting-item__value">{{ cfg.value }}</text>
+            </view>
+            <text class="setting-item__arrow">›</text>
+          </view>
+        </view>
       </view>
       
       <view v-if="activeTab === 'version'" class="settings__panel">
@@ -269,7 +320,7 @@ function selectJavaVersion(ver: string) {
             <view class="setting-item__icon">📋</view>
             <view class="setting-item__main">
               <text class="setting-item__label">版本列表</text>
-              <text class="setting-item__value">已安装 {{ versionStore.installed.length }} 个版本</text>
+              <text class="setting-item__value">已安装 {{ Object.keys(versionStore.installed).length }} 个版本</text>
             </view>
             <text class="setting-item__arrow">›</text>
           </view>
@@ -570,6 +621,31 @@ function selectJavaVersion(ver: string) {
             <text>取消</text>
           </view>
           <view class="modal-btn modal-btn--primary" @tap="saveMemory">
+            <text>保存</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <view v-if="showPathModal" class="modal-mask" @tap="showPathModal = false">
+      <view class="modal-panel" @tap.stop>
+        <text class="modal-panel__title">{{ pathConfigLabel }}</text>
+        <text class="modal-panel__desc">设置路径，留空使用默认值</text>
+        
+        <view class="modal-field">
+          <text class="modal-field__label">目录路径</text>
+          <input 
+            class="modal-field__input" 
+            v-model="pathConfigDraft"
+            :placeholder="'输入' + pathConfigLabel + '路径'"
+          />
+        </view>
+        
+        <view class="modal-actions">
+          <view class="modal-btn modal-btn--ghost" @tap="showPathModal = false">
+            <text>取消</text>
+          </view>
+          <view class="modal-btn modal-btn--primary" @tap="savePathConfig">
             <text>保存</text>
           </view>
         </view>

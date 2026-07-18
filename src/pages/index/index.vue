@@ -12,6 +12,7 @@ import McCard from '@/components/mc-card.vue'
 import McBadge from '@/components/mc-badge.vue'
 import GameIcon from '@/components/game-icon.vue'
 import UpdateModal from '@/components/update-modal.vue'
+import LaunchProgress from '@/components/launch-progress.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
 import { checkUpdate } from '@/utils/updater'
@@ -26,8 +27,7 @@ const javaStore = useJavaStore()
 
 const activeNav = ref('home')
 const activeTab = ref('game')
-const showLaunchModal = ref(false)
-const showCommand = ref('')
+const showLaunchProgress = ref(false)
 const showUpdateModal = ref(false)
 const latestUpdate = ref<IAppUpdate | null>(null)
 const showAnnouncement = ref(true)
@@ -132,58 +132,7 @@ function startGame() {
     uni.showToast({ title: '请先下载游戏版本', icon: 'none' })
     return
   }
-  const javaPath = selectedJava.value?.path || settingsStore.javaPath || 'java'
-  const cmd = buildLaunchCommand({
-    account: selectedAccount.value,
-    version: selectedVersion.value,
-    gameDir: settingsStore.gameDir,
-    javaPath,
-    memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
-    jvmArgs: ['-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC', '-XX:G1NewSizePercent=20', '-XX:G1ReservePercent=20', '-XX:MaxGCPauseMillis=50', '-XX:G1MixedGCCountTarget=4'],
-    gameArgs: [],
-    fullscreen: settingsStore.fullscreen
-  })
-  showCommand.value = buildSingleLine(cmd)
-  showLaunchModal.value = true
-}
-
-function copyCmd() {
-  copyText(showCommand.value)
-  uni.showToast({ title: '已复制到剪贴板', icon: 'success' })
-}
-function downloadBat() {
-  if (!selectedAccount.value || !selectedVersion.value) return
-  const javaPath = selectedJava.value?.path || settingsStore.javaPath || 'java'
-  const cmd = buildLaunchCommand({
-    account: selectedAccount.value,
-    version: selectedVersion.value,
-    gameDir: settingsStore.gameDir,
-    javaPath,
-    memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
-    jvmArgs: [],
-    gameArgs: [],
-    fullscreen: settingsStore.fullscreen
-  })
-  const script = buildBatchScript(cmd, selectedVersion.value.id)
-  downloadFile(`start-${selectedVersion.value.id}.bat`, script)
-  uni.showToast({ title: '已下载 .bat 启动脚本', icon: 'success' })
-}
-function downloadSh() {
-  if (!selectedAccount.value || !selectedVersion.value) return
-  const javaPath = selectedJava.value?.path || settingsStore.javaPath || 'java'
-  const cmd = buildLaunchCommand({
-    account: selectedAccount.value,
-    version: selectedVersion.value,
-    gameDir: settingsStore.gameDir,
-    javaPath,
-    memory: { min: settingsStore.minMemory, max: settingsStore.maxMemory },
-    jvmArgs: [],
-    gameArgs: [],
-    fullscreen: settingsStore.fullscreen
-  })
-  const script = buildShellScript(cmd, selectedVersion.value.id)
-  downloadFile(`start-${selectedVersion.value.id}.sh`, script)
-  uni.showToast({ title: '已下载 .sh 启动脚本', icon: 'success' })
+  showLaunchProgress.value = true
 }
 
 function ignoreUpdate() {
@@ -213,6 +162,7 @@ onMounted(() => {
 <template>
   <view class="home">
     <UpdateModal v-model:show="showUpdateModal" :update="latestUpdate" @ignore="ignoreUpdate" />
+    <LaunchProgress v-if="showLaunchProgress" @close="showLaunchProgress = false" />
     
     <view class="home__bg">
       <view class="home__bg-image" />
@@ -527,26 +477,6 @@ onMounted(() => {
               <text class="launch-link__icon">🖥️</text>
               <text class="launch-link__text">服务器</text>
             </view>
-          </view>
-        </view>
-      </view>
-    </view>
-    
-    <view v-if="showLaunchModal" class="home__modal" @tap.self="showLaunchModal = false">
-      <view class="home__modal-panel">
-        <view class="home__modal-header">
-          <text class="home__modal-title">启动命令</text>
-          <text class="home__modal-close" @tap="showLaunchModal = false">✕</text>
-        </view>
-        <view class="home__modal-body">
-          <text class="home__modal-tip">请在 PC 上打开终端,粘贴并执行以下命令,或下载启动脚本双击运行:</text>
-          <view class="home__modal-cmd-box">
-            <text class="home__modal-cmd" user-select="text">{{ showCommand }}</text>
-          </view>
-          <view class="home__modal-actions">
-            <McButton variant="primary" block @click="copyCmd">📋 复制命令</McButton>
-            <McButton variant="secondary" block @click="downloadBat">💾 下载 .bat 启动脚本</McButton>
-            <McButton variant="ghost" block @click="downloadSh">💾 下载 .sh 启动脚本</McButton>
           </view>
         </view>
       </view>

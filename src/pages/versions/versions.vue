@@ -74,16 +74,28 @@ function cancelDownload(id: string) {
   versionStore.cancelDownload(id)
 }
 
-function getDownloadStatus(id: string): string {
-  const task = versionStore.downloads[id]
-  if (!task) return 'idle'
-  return task.status
+function getDownloadTasksForVersion(versionId: string) {
+  return versionStore.downloads.filter(d => d.name.includes(versionId))
 }
 
-function getDownloadProgress(id: string): number {
-  const task = versionStore.downloads[id]
-  if (!task) return 0
-  return task.progress
+function getDownloadStatus(versionId: string): string {
+  const tasks = getDownloadTasksForVersion(versionId)
+  if (tasks.length === 0) return 'idle'
+  const active = tasks.find(t => t.status === 'downloading')
+  if (active) return 'downloading'
+  const done = tasks.find(t => t.status === 'completed')
+  if (done) return 'done'
+  const err = tasks.find(t => t.status === 'error')
+  if (err) return 'error'
+  return 'pending'
+}
+
+function getDownloadProgress(versionId: string): number {
+  const tasks = getDownloadTasksForVersion(versionId)
+  if (tasks.length === 0) return 0
+  const total = tasks.reduce((a, t) => a + t.total, 0)
+  const done = tasks.reduce((a, t) => a + t.downloaded, 0)
+  return total ? Math.floor(done * 100 / total) : 0
 }
 </script>
 
@@ -145,33 +157,33 @@ function getDownloadProgress(id: string): number {
           </view>
         </view>
         
-        <view v-if="Object.keys(versionStore.downloads).length > 0" class="downloads-section">
+        <view v-if="versionStore.downloads.length > 0" class="downloads-section">
           <text class="downloads-section__title">下载任务</text>
           
           <view 
             v-for="task in versionStore.downloads" 
-            :key="task.versionId"
+            :key="task.id"
             class="download-item"
           >
             <view class="download-item__head">
-              <text class="download-item__name">{{ task.versionId }}</text>
+              <text class="download-item__name">{{ task.name }}</text>
               <text 
                 class="download-item__status"
                 :class="{ 'download-item__status--loading': task.status === 'downloading' }"
               >
-                {{ task.status === 'downloading' ? '下载中' : task.status === 'done' ? '已完成' : task.status === 'error' ? '失败' : '等待中' }}
+                {{ task.status === 'downloading' ? '下载中' : task.status === 'completed' ? '已完成' : task.status === 'error' ? '失败' : '等待中' }}
               </text>
             </view>
             <view class="download-item__bar">
               <view 
                 class="download-item__bar-fill" 
-                :style="{ width: task.progress + '%' }"
+                :style="{ width: (task.total ? Math.floor(task.downloaded * 100 / task.total) : 0) + '%' }"
                 :class="{ 'download-item__bar-fill--error': task.status === 'error' }"
               />
             </view>
             <view class="download-item__info">
-              <text>{{ task.progress }}%</text>
-              <text v-if="task.status === 'downloading'" class="download-item__cancel" @tap="cancelDownload(task.versionId)">取消</text>
+              <text>{{ task.total ? Math.floor(task.downloaded * 100 / task.total) : 0 }}%</text>
+              <text v-if="task.status === 'downloading'" class="download-item__cancel" @tap="cancelDownload(task.name.replace('Minecraft ', ''))">取消</text>
             </view>
           </view>
         </view>

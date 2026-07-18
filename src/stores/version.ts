@@ -3,6 +3,7 @@ import type { IGameVersion, IModLoader, IDownloadTask } from '@/types'
 import { uuid } from '@/utils/format'
 import * as bmcl from '@/api/bmcl'
 import { useSettingsStore } from './settings'
+import { downloadFile } from '@/utils/downloader'
 
 const STORAGE_KEY = 'sakuram.versions.v1'
 const INSTALLED_KEY = 'sakuram.versions.installed.v1'
@@ -124,6 +125,92 @@ export const useVersionStore = defineStore('version', {
     isDownloading(versionId: string): boolean {
       return this.downloads.some(d => d.name.includes(versionId) && d.status === 'downloading')
     },
+    /**
+     * 下载并安装版本 (兼容 versions.vue 调用)
+     */
+    async download(versionId: string) {
+      if (this.isDownloading(versionId)) {
+        uni.showToast({ title: '该版本正在下载中', icon: 'none' })
+        return
+      }
+      if (this.installed[versionId]) {
+        uni.showToast({ title: '该版本已安装', icon: 'none' })
+        return
+      }
+      const settings = useSettingsStore()
+      const manifestVersion = this.manifest?.versions.find(v => v.id === versionId)
+      if (!manifestVersion) {
+        uni.showToast({ title: '版本信息不存在', icon: 'none' })
+        return
+      }
+      const task = this.addDownload({
+        name: `Minecraft ${versionId}`,
+        url: '',
+        total: 0,
+        downloaded: 0,
+        status: 'downloading'
+      })
+      try {
+        const versionJson = await bmcl.getVersionJson(versionId, settings.downloadSource)
+        const client = versionJson?.downloads?.client
+        if (!client?.url) {
+          this.updateDownload(task.id, { status: 'error', error: '版本客户端 URL 不可用' })
+          uni.showToast({ title: '获取版本信息失败', icon: 'none' })
+          return
+        }
+        let clientUrl = client.url
+        if (settings.downloadSource === 'bmcl') {
+          const bmclBase = bmcl.getApiBase('bmcl')
+          clientUrl = clientUrl
+            .replace('https://launcher.mojang.com', bmclBase)
+            .replace('https://piston-data.mojang.com', bmclBase)
+        } else if (settings.downloadSource === 'mcbbs') {
+          const mcbbsBase = bmcl.getApiBase('mcbbs')
+          clientUrl = clientUrl
+            .replace('https://launcher.mojang.com', mcbbsBase)
+            .replace('https://piston-data.mojang.com', mcbbsBase)
+        }
+        this.updateDownload(task.id, {
+          url: clientUrl,
+          total: client.size || 0
+        })
+        await downloadFile({
+          url: clientUrl,
+          onProgress: (downloaded, total, speed) => {
+            this.updateDownload(task.id, { downloaded, total: total || client.size || 0, speed })
+          },
+          onSuccess: (path) => {
+            this.updateDownload(task.id, { status: 'completed', downloaded: client.size || 0, total: client.size || 0 })
+            this.markInstalled({
+              ...manifestVersion,
+              installed: true,
+              installedPath: path || `./.minecraft/versions/${versionId}`,
+              size: client.size
+            })
+            uni.showToast({ title: '下载完成', icon: 'success' })
+          },
+          onError: (e) => {
+            this.updateDownload(task.id, { status: 'error', error: e.message })
+            uni.showToast({ title: '下载失败: ' + e.message, icon: 'none' })
+          }
+        })
+      } catch (e: any) {
+        this.updateDownload(task.id, { status: 'error', error: e.message })
+        uni.showToast({ title: '下载失败: ' + (e.message || ''), icon: 'none' })
+      }
+    },
+
+    async cancelDownload(versionId: string) {
+      const tasks = this.downloads.filter(d => d.name.includes(versionId) && d.status === 'downloading')
+      tasks.forEach(t => { t.status = 'error'; t.error = '已取消' })
+      uni.showToast({ title: '已取消下载', icon: 'none' })
+    },
+
+    uninstall(id: string) {
+      this.markUninstalled(id)
+      uni.showToast({ title: '已删除版本', icon: 'success' })
+    },
+
     async loadModLoaders(mcVersion: string) {
       this.loadingLoaders[mcVersion] = true
       try {
