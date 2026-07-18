@@ -39,7 +39,7 @@ function openVersion(id: string) {
     <view v-else class="mods__empty">
       <text class="mods__empty-icon">🧩</text>
       <text class="mods__empty-text">请先在「版本」页选择一个游戏版本</text>
-      <view class="mods__link" @tap="uni.switchTab({ url: '/pages/versions/versions' })">前往版本管理</view>
+      <view class="mods__link" @tap="uni.navigateTo({ url: '/pages/versions/versions' })">前往版本管理</view>
     </view>
   </view>
 </template>

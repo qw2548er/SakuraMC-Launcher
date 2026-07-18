@@ -18,67 +18,78 @@
     {
       "path": "pages/accounts/accounts",
       "style": {
-        "navigationBarTitleText": "账号管理"
+        "navigationBarTitleText": "账号管理",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/accounts/microsoft-login",
       "style": {
-        "navigationBarTitleText": "微软账号登录"
+        "navigationBarTitleText": "微软账号登录",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/versions/versions",
       "style": {
-        "navigationBarTitleText": "版本管理"
+        "navigationBarTitleText": "版本管理",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/versions/version-detail",
       "style": {
-        "navigationBarTitleText": "版本详情"
+        "navigationBarTitleText": "版本详情",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/mods/mods",
       "style": {
-        "navigationBarTitleText": "Mod 管理"
+        "navigationBarTitleText": "Mod 管理",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/servers/servers",
       "style": {
-        "navigationBarTitleText": "服务器"
+        "navigationBarTitleText": "服务器",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/servers/server-detail",
       "style": {
-        "navigationBarTitleText": "服务器详情"
+        "navigationBarTitleText": "服务器详情",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/frp/frp",
       "style": {
-        "navigationBarTitleText": "樱花穿透"
+        "navigationBarTitleText": "樱花穿透",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/frp/tunnel-edit",
       "style": {
-        "navigationBarTitleText": "编辑隧道"
+        "navigationBarTitleText": "编辑隧道",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/frp/nodes",
       "style": {
-        "navigationBarTitleText": "节点选择"
+        "navigationBarTitleText": "节点选择",
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "pages/settings/settings",
       "style": {
-        "navigationBarTitleText": "设置"
+        "navigationBarTitleText": "设置",
+        "navigationStyle": "custom"
       }
     }
   ],
@@ -87,33 +98,5 @@
     "navigationBarTitleText": "樱花 MC 启动器",
     "navigationBarBackgroundColor": "#1a0f2e",
     "backgroundColor": "#0f0f1a"
-  },
-  "tabBar": {
-    "color": "#8a7ca8",
-    "selectedColor": "#ffb7d5",
-    "backgroundColor": "#1a0f2e",
-    "borderStyle": "black",
-    "list": [
-      {
-        "pagePath": "pages/index/index",
-        "text": "首页"
-      },
-      {
-        "pagePath": "pages/versions/versions",
-        "text": "版本"
-      },
-      {
-        "pagePath": "pages/servers/servers",
-        "text": "服务器"
-      },
-      {
-        "pagePath": "pages/frp/frp",
-        "text": "穿透"
-      },
-      {
-        "pagePath": "pages/settings/settings",
-        "text": "设置"
-      }
-    ]
   }
 }

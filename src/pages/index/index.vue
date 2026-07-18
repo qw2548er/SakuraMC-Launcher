@@ -76,7 +76,7 @@ function navigateTo(id: string) {
       uni.navigateTo({ url: '/pages/mods/mods' })
       break
     case 'frp':
-      uni.switchTab({ url: '/pages/frp/frp' })
+      uni.navigateTo({ url: '/pages/frp/frp' })
       break
     case 'account':
       uni.navigateTo({ url: '/pages/accounts/accounts' })
