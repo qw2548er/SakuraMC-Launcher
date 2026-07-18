@@ -1,6 +1,6 @@
 {
   "name": "sakura-mc-launcher",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "MC 启动器 + 樱花穿透跨端控制台 (Uniapp Vue3)",
   "private": true,
   "scripts": {
