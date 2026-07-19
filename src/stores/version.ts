@@ -5,7 +5,7 @@ import * as bmcl from '@/api/bmcl'
 import { useSettingsStore } from './settings'
 import { downloadFile, ensureDirectory } from '@/utils/downloader'
 
-async function saveJsonToFile(filePath: string, data: any): Promise<void> {
+export async function saveJsonToFile(filePath: string, data: any): Promise<void> {
   return new Promise((resolve, reject) => {
     // #ifdef APP-PLUS
     const fileSystem = plus.io.getFileSystemManager()

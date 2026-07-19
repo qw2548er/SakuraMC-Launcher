@@ -245,10 +245,6 @@ function saveJava() {
   uni.showToast({ title: '已保存', icon: 'success' })
 }
 
-function autoDetectJava() {
-  uni.showToast({ title: '请手动选择或输入', icon: 'none' })
-}
-
 function openMemoryModal() {
   memMin.value = settingsStore.minMemory
   memMax.value = settingsStore.maxMemory
