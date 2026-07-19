@@ -126,9 +126,11 @@ jobs:
       - name: 安装 Cordova
         run: npm install -g cordova
 
-      - name: 安装 WebView 优化插件
+      - name: 安装本地 Cordova 插件
         working-directory: build/mobile
-        run: cordova plugin add ./cordova-plugin-webview-config --no-interactive
+        run: |
+          cordova plugin add ./cordova-plugin-webview-config --no-interactive
+          cordova plugin add ./cordova-plugin-sakuramc-core --no-interactive
 
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v3

@@ -1,0 +1,19 @@
+{
+  "name": "cordova-plugin-sakuramc-core",
+  "version": "1.0.0",
+  "description": "樱花 MC 启动器核心权限与配置插件",
+  "cordova": {
+    "id": "cordova-plugin-sakuramc-core",
+    "platforms": [
+      "android"
+    ]
+  },
+  "keywords": [
+    "cordova",
+    "android",
+    "permission",
+    "sakuramc"
+  ],
+  "author": "SakuraMC Team",
+  "license": "MIT"
+}

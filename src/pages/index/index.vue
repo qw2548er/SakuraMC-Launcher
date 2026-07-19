@@ -16,6 +16,7 @@ import LaunchProgress from '@/components/launch-progress.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
 import { checkUpdate } from '@/utils/updater'
+import { requestCorePermissions } from '@/utils/permissions'
 import type { IAppUpdate } from '@/types'
 
 const accountStore = useAccountStore()
@@ -55,6 +56,15 @@ onShow(() => {
   versionStore.load()
   if (!versionStore.manifest) versionStore.loadManifest()
   serverStore.pingAll()
+})
+
+onMounted(() => {
+  // #ifdef APP-PLUS
+  // 延迟请求权限，避免启动页被弹窗打断
+  setTimeout(() => {
+    requestCorePermissions().catch(() => {})
+  }, 1200)
+  // #endif
 })
 
 const selectedVersion = computed(() => versionStore.selected)

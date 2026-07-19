@@ -49,4 +49,5 @@
     <plugin name="cordova-plugin-statusbar" spec="3.0.0" />
     <plugin name="cordova-plugin-inappbrowser" spec="5.0.0" />
     <plugin name="cordova-plugin-file" spec="7.0.0" />
+    <plugin name="cordova-plugin-sakuramc-core" spec="./cordova-plugin-sakuramc-core" />
 </widget>
