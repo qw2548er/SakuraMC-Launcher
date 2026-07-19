@@ -160,26 +160,21 @@ public class SakuraMCCorePlugin extends CordovaPlugin {
     }
 
     @Override
-    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
         super.onRequestPermissionResult(requestCode, permissions, grantResults);
         if (requestCode != PERMISSION_REQUEST_CODE || pendingCallback == null || !"requestPermissions".equals(pendingAction)) {
             return;
         }
 
-        try {
-            JSONObject results = new JSONObject();
-            boolean allGranted = true;
-            for (int i = 0; i < permissions.length; i++) {
-                boolean granted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
-                results.put(permissions[i], granted);
-                if (!granted) allGranted = false;
-            }
-            pendingCallback.success(createPermissionResult(allGranted, results));
-        } catch (JSONException e) {
-            pendingCallback.error(e.getMessage());
-        } finally {
-            pendingCallback = null;
+        JSONObject results = new JSONObject();
+        boolean allGranted = true;
+        for (int i = 0; i < permissions.length; i++) {
+            boolean granted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
+            results.put(permissions[i], granted);
+            if (!granted) allGranted = false;
         }
+        pendingCallback.success(createPermissionResult(allGranted, results));
+        pendingCallback = null;
     }
 
     @Override
@@ -210,6 +205,15 @@ public class SakuraMCCorePlugin extends CordovaPlugin {
         map.put("camera", Manifest.permission.CAMERA);
         map.put("microphone", Manifest.permission.RECORD_AUDIO);
         map.put("notifications", Manifest.permission.POST_NOTIFICATIONS);
+        map.put("bluetoothConnect", "android.permission.BLUETOOTH_CONNECT");
+        map.put("bluetoothScan", "android.permission.BLUETOOTH_SCAN");
+        map.put("systemAlertWindow", "android.permission.SYSTEM_ALERT_WINDOW");
+        map.put("modifyAudioSettings", "android.permission.MODIFY_AUDIO_SETTINGS");
+        map.put("nfc", "android.permission.NFC");
+        map.put("changeWifiState", "android.permission.CHANGE_WIFI_STATE");
+        map.put("writeSettings", "android.permission.WRITE_SETTINGS");
+        map.put("installShortcut", "android.permission.INSTALL_SHORTCUT");
+        map.put("reorderTasks", "android.permission.REORDER_TASKS");
         return map.get(name);
     }
 }

@@ -132,6 +132,11 @@ export async function requestCorePermissions(): Promise<boolean> {
   }
   permissions.push('notifications')
 
+  // Android 12+ 蓝牙控制器连接需要运行时权限
+  if (sdk >= 31) {
+    permissions.push('bluetoothConnect', 'bluetoothScan')
+  }
+
   const res = await requestPermissions(permissions)
 
   // 对启动器来说，所有文件访问权限是核心，单独引导

@@ -60,6 +60,22 @@
             <uses-feature android:name="android.hardware.microphone" android:required="false" />
         </config-file>
 
+        <!-- 扩展权限：悬浮窗、蓝牙控制器、音频、NFC、WiFi、快捷方式等 -->
+        <config-file target="AndroidManifest.xml" parent="/manifest">
+            <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+            <uses-permission android:name="android.permission.BLUETOOTH" />
+            <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+            <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+            <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+            <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+            <uses-permission android:name="android.permission.NFC" />
+            <uses-feature android:name="android.hardware.nfc" android:required="false" />
+            <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+            <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+            <uses-permission android:name="android.permission.INSTALL_SHORTCUT" />
+            <uses-permission android:name="android.permission.REORDER_TASKS" />
+        </config-file>
+
         <!-- 应用内安装 APK 的 FileProvider -->
         <config-file target="AndroidManifest.xml" parent="/manifest/application">
             <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
