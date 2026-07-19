@@ -15,22 +15,33 @@ export interface FrpcConfig {
 }
 
 export function generateFrpcIni(node: IFrpNode, tunnel: IFrpTunnel, userToken: string): string {
-  return `[common]
-server_addr = ${node.hostname}
-server_port = ${node.port}
-token = ${userToken}
-${tunnel.useCompression ? 'use_compression = true' : ''}
-${tunnel.useEncryption ? 'use_encryption = true' : ''}
-log_level = info
-log_file = ./frpc.log
+  const commonLines = [
+    '[common]',
+    `server_addr = ${node.hostname}`,
+    `server_port = ${node.port}`,
+    `token = ${userToken}`,
+    'log_level = info',
+    'log_file = ./frpc.log',
+    'log_max_days = 3'
+  ]
+  if (tunnel.useCompression) commonLines.push('use_compression = true')
+  if (tunnel.useEncryption) commonLines.push('use_encryption = true')
 
-[${tunnel.name}]
-type = ${tunnel.type}
-local_ip = ${tunnel.localIp}
-local_port = ${tunnel.localPort}
-${tunnel.type === 'tcp' || tunnel.type === 'udp' ? `remote_port = ${tunnel.remotePort || 0}` : ''}
-${tunnel.type === 'http' || tunnel.type === 'https' ? `custom_domains = ${tunnel.domain || ''}` : ''}
-`
+  const tunnelLines = [
+    '',
+    `[${tunnel.name}]`,
+    `type = ${tunnel.type}`,
+    `local_ip = ${tunnel.localIp}`,
+    `local_port = ${tunnel.localPort}`
+  ]
+  if (tunnel.type === 'tcp' || tunnel.type === 'udp') {
+    tunnelLines.push(`remote_port = ${tunnel.remotePort || 0}`)
+  }
+  if (tunnel.type === 'http' || tunnel.type === 'https') {
+    tunnelLines.push(`custom_domains = ${tunnel.domain || ''}`)
+  }
+
+  return commonLines.concat(tunnelLines).join('\n') + '\n'
 }
 
 /** 生成 frpc 启动命令 */
@@ -38,14 +49,17 @@ export function generateFrpcCommand(iniPath: string, binaryPath: string = 'frpc'
   return `${binaryPath} -c ${iniPath}`
 }
 
-/** 樱花 frpc 二进制下载 URL */
+/** 樱花 frpc 二进制下载 URL
+ * iOS 端无法直接运行 frpc, 返回 PC 端 (windows amd64) 下载链接供用户在 PC 上下载
+ */
 export function getFrpcBinaryUrl(): string {
   const platform = detectPlatform()
   if (platform === 'android') {
     return getFrpcDownloadUrl('android', 'arm64')
   }
   if (platform === 'ios') {
-    return getFrpcDownloadUrl('linux', 'arm64') // iOS 用户通常用 PC
+    // iOS 无法运行 frpc, 引导用户在 PC 上下载
+    return getFrpcDownloadUrl('windows', 'amd64')
   }
   if (platform === 'windows' || platform === 'macos' || platform === 'linux') {
     return getFrpcDownloadUrl(platform, 'amd64')

@@ -64,11 +64,13 @@ function addOfflineAccount() {
 }
 
 function addMicrosoftAccount() {
-  uni.showToast({ title: '微软登录开发中', icon: 'none' })
+  // 跳转到微软登录页面 (Device Code Flow)
+  uni.navigateTo({ url: '/pages/accounts/microsoft-login' })
+  showAddModal.value = false
 }
 
 function getSkinUrl(name: string): string {
-  return `https://mc-heads.net/avatar/${name}/128`
+  return `https://mc-heads.net/avatar/${encodeURIComponent(name)}/128`
 }
 
 function selectSkin(id: string) {
@@ -119,9 +121,9 @@ function uploadSkin() {
           :class="{ 'account-card--active': accountStore.selectedId === acc.id }"
           @tap="selectAccount(acc.id)"
         >
-          <image 
-            class="account-card__avatar" 
-            :src="getSkinUrl(acc.username)"
+          <image
+            class="account-card__avatar"
+            :src="acc.avatarUrl || getSkinUrl(acc.username)"
             mode="aspectFill"
           />
           <view class="account-card__main">
@@ -213,7 +215,7 @@ function uploadSkin() {
           <view class="add-microsoft__icon">🪟</view>
           <text class="add-microsoft__title">微软账号登录</text>
           <text class="add-microsoft__desc">使用微软账号登录，可进入正版服务器</text>
-          <text class="add-microsoft__soon">即将推出...</text>
+          <text class="add-microsoft__soon">点击"登录"按钮开始设备码授权流程</text>
         </view>
         
         <view class="modal-actions">

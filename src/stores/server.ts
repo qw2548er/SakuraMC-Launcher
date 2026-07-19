@@ -40,6 +40,9 @@ export const useServerStore = defineStore('server', {
       try {
         const raw = uni.getStorageSync(STORAGE_KEY)
         if (raw) this.servers = JSON.parse(raw as string)
+        // 恢复选中的服务器
+        const activeId = uni.getStorageSync('sakuram.servers.active')
+        if (activeId) this.activeServerId = activeId as string
       } catch (e) { console.warn('[Server] load failed', e) }
     },
     persist() {
@@ -76,23 +79,64 @@ export const useServerStore = defineStore('server', {
     },
     setActive(id: string | null) {
       this.activeServerId = id
+      // 持久化选中状态
+      try {
+        if (id) uni.setStorageSync('sakuram.servers.active', id)
+        else uni.removeStorageSync('sakuram.servers.active')
+      } catch (e) { /* 忽略存储错误 */ }
     },
     async ping(server: IServer): Promise<number> {
       const start = Date.now()
-      return new Promise<number>(resolve => {
-        // SLP 协议在 H5 中无法直接发送,使用模拟延迟
-        setTimeout(() => {
-          const latency = Math.floor(20 + Math.random() * 80)
-          const online = Math.random() > 0.2
-          this.update(server.id, {
-            status: online ? 'online' : 'offline',
-            ping: latency,
-            players: online ? { online: Math.floor(Math.random() * 10), max: 20 } : undefined,
-            motd: online ? '§a欢迎来到 §b樱花 §aMC §e服务器' : undefined
+      // SLP 协议要求发送特定字节序列, H5 / APP-PLUS 都无法直接构造 TCP 数据包
+      // 这里退化为 TCP 可达性探测: 通过 uni.request 发起连接, 测量响应时间
+      // 由于 MC 服务器端口不是 HTTP, 通常会在 TCP 握手后被立即关闭, 据此判断可达性
+      const probe = (url: string): Promise<{ ok: boolean; latency: number }> =>
+        new Promise(resolve => {
+          const t0 = Date.now()
+          let settled = false
+          const done = (ok: boolean) => {
+            if (settled) return
+            settled = true
+            resolve({ ok, latency: Date.now() - t0 })
+          }
+          const timer = setTimeout(() => done(false), 4000)
+          uni.request({
+            url,
+            method: 'GET',
+            timeout: 4000,
+            success: () => { clearTimeout(timer); done(true) },
+            fail: (e: any) => {
+              clearTimeout(timer)
+              const msg: string = (e?.errMsg || '').toLowerCase()
+              // timeout / abort 视为不可达; 其他错误 (协议错误/连接被拒) 视为可达
+              if (msg.includes('timeout') || msg.includes('abort')) done(false)
+              else done(true)
+            }
           })
-          resolve(online ? latency : -1)
-        }, 600 + Math.random() * 400)
-      })
+        })
+
+      try {
+        // 先尝试 server 端口直连, 失败再退化为 443
+        const r1 = await probe(`https://${server.host}:${server.port}/`)
+        let ok = r1.ok
+        let latency = r1.latency
+        if (!ok) {
+          const r2 = await probe(`https://${server.host}/`)
+          ok = r2.ok
+          latency = r2.latency
+        }
+        this.update(server.id, {
+          status: ok ? 'online' : 'offline',
+          ping: ok ? latency : -1,
+          // 玩家数等真实信息需要 SLP 协议, 这里只更新状态
+          players: ok ? (server.players || { online: 0, max: 20 }) : undefined,
+          motd: ok ? (server.motd || '§a服务器在线') : undefined
+        })
+        return ok ? latency : -1
+      } catch (e) {
+        this.update(server.id, { status: 'offline', ping: -1 })
+        return -1
+      }
     },
     async pingAll() {
       for (const s of this.servers) {

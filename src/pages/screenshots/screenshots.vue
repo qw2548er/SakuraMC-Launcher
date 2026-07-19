@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { listDirectory, deleteFile, MINECRAFT_DIR } from '@/utils/setup'
 
 const settingsStore = useSettingsStore()
 
@@ -11,25 +12,72 @@ interface Screenshot {
   date: string
   resolution: string
   previewColor: string
+  path: string
+  sizeBytes: number
 }
 
-const screenshots = ref<Screenshot[]>([
-  { id: '1', name: '2026-07-18_14.30.25', size: '2.4 MB', date: '2026-07-18 14:30', resolution: '1920×1080', previewColor: '#4a7c59' },
-  { id: '2', name: '2026-07-18_12.15.10', size: '1.8 MB', date: '2026-07-18 12:15', resolution: '1920×1080', previewColor: '#7c5a4a' },
-  { id: '3', name: '2026-07-17_20.05.33', size: '3.1 MB', date: '2026-07-17 20:05', resolution: '1920×1080', previewColor: '#4a5a7c' },
-  { id: '4', name: '2026-07-17_16.42.18', size: '2.2 MB', date: '2026-07-17 16:42', resolution: '2560×1440', previewColor: '#7c6a4a' },
-  { id: '5', name: '2026-07-16_22.10.05', size: '1.5 MB', date: '2026-07-16 22:10', resolution: '1920×1080', previewColor: '#5a7c4a' },
-  { id: '6', name: '2026-07-16_19.30.00', size: '4.2 MB', date: '2026-07-16 19:30', resolution: '3840×2160', previewColor: '#4a7c7c' },
-  { id: '7', name: '2026-07-15_14.55.22', size: '2.0 MB', date: '2026-07-15 14:55', resolution: '1920×1080', previewColor: '#7c4a5a' },
-  { id: '8', name: '2026-07-15_11.20.45', size: '1.9 MB', date: '2026-07-15 11:20', resolution: '1920×1080', previewColor: '#6a6a4a' },
-  { id: '9', name: '2026-07-14_18.15.30', size: '2.8 MB', date: '2026-07-14 18:15', resolution: '1920×1080', previewColor: '#5a4a7c' },
-  { id: '10', name: '2026-07-14_10.00.00', size: '3.5 MB', date: '2026-07-14 10:00', resolution: '2560×1440', previewColor: '#4a6a7c' },
-])
-
+const screenshots = ref<Screenshot[]>([])
+const loading = ref(false)
 const search = ref('')
 const selectedView = ref<'grid' | 'list'>('grid')
 const previewScreenshot = ref<Screenshot | null>(null)
 const showPreview = ref(false)
+
+// 哈希生成颜色 (用文件名作为种子, 让占位色稳定)
+function colorFromName(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
+  const hue = Math.abs(h) % 360
+  return `hsl(${hue}, 35%, 30%)`
+}
+
+function formatSize(bytes: number): string {
+  if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+  if (bytes > 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return bytes + ' B'
+}
+
+function formatDate(ts: number): string {
+  if (!ts) return '未知'
+  try {
+    const d = new Date(ts)
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch { return '未知' }
+}
+
+// 从文件名提取分辨率 (例如 2026-07-18_14.30.25.png 无法提取, 但保留通用解析)
+function parseResolution(name: string): string {
+  const m = name.match(/(\d{3,4})x(\d{3,4})/i)
+  return m ? `${m[1]}×${m[2]}` : '截图'
+}
+
+async function loadScreenshots() {
+  loading.value = true
+  try {
+    const dir = settingsStore.screenshotsDir || `${MINECRAFT_DIR}/screenshots`
+    const entries = await listDirectory(dir)
+    const items: Screenshot[] = entries
+      .filter(e => !e.isDir && /\.(png|jpg|jpeg)$/i.test(e.name))
+      .map(e => ({
+        id: e.name,
+        name: e.name.replace(/\.(png|jpg|jpeg)$/i, ''),
+        size: formatSize(e.size || 0),
+        date: formatDate(e.lastModified || 0),
+        resolution: parseResolution(e.name),
+        previewColor: colorFromName(e.name),
+        path: e.path,
+        sizeBytes: e.size || 0
+      }))
+      .sort((a, b) => b.name.localeCompare(a.name))
+    screenshots.value = items
+  } catch (e: any) {
+    console.warn('[Screenshots] 加载失败:', e?.message || e)
+    screenshots.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
 const filteredScreenshots = computed(() => {
   if (!search.value) return screenshots.value
@@ -38,8 +86,8 @@ const filteredScreenshots = computed(() => {
 })
 
 const totalSize = computed(() => {
-  const total = screenshots.value.reduce((sum, s) => sum + parseFloat(s.size), 0)
-  return total.toFixed(1) + ' MB'
+  const total = screenshots.value.reduce((sum, s) => sum + (s.sizeBytes || 0), 0)
+  return formatSize(total)
 })
 
 function openPreview(ss: Screenshot) {
@@ -58,10 +106,18 @@ function deleteScreenshot(id: string) {
   uni.showModal({
     title: '删除截图',
     content: '确定删除 ' + ss.name + '？',
-    success: (r) => {
-      if (r.confirm) {
+    success: async (r) => {
+      if (!r.confirm) return
+      uni.showLoading({ title: '删除中...' })
+      try {
+        await deleteFile(ss.path, false)
         screenshots.value = screenshots.value.filter(s => s.id !== id)
+        if (previewScreenshot.value?.id === id) closePreview()
+        uni.hideLoading()
         uni.showToast({ title: '已删除', icon: 'success' })
+      } catch (e: any) {
+        uni.hideLoading()
+        uni.showToast({ title: '删除失败: ' + (e?.message || ''), icon: 'none' })
       }
     }
   })
@@ -73,9 +129,19 @@ function openScreenshotsFolder() {
 }
 
 function shareScreenshot(ss: Screenshot) {
-  uni.showToast({ title: ss.name + ' 已复制到剪贴板', icon: 'success' })
-  uni.setClipboardData({ data: ss.name, showToast: false })
+  uni.setClipboardData({
+    data: ss.name,
+    showToast: true,
+    success: () => uni.showToast({ title: ss.name + ' 已复制', icon: 'success' }),
+    fail: () => uni.showToast({ title: '复制失败', icon: 'none' })
+  })
 }
+
+function refreshList() {
+  loadScreenshots()
+}
+
+onMounted(loadScreenshots)
 </script>
 
 <template>

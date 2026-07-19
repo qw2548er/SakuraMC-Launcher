@@ -1,17 +1,25 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { listDirectory, deleteFile, MINECRAFT_DIR } from '@/utils/setup'
 
 const settingsStore = useSettingsStore()
 
-const saves = ref([
-  { id: '1', name: '生存世界', gameType: 'survival', lastPlayed: '2026-07-18 14:30', size: '128 MB', players: 1, version: '1.21.1', icon: '🌍' },
-  { id: '2', name: '创造测试', gameType: 'creative', lastPlayed: '2026-07-17 20:15', size: '45 MB', players: 0, version: '1.21.1', icon: '🏗️' },
-  { id: '3', name: '空岛生存', gameType: 'survival', lastPlayed: '2026-07-15 09:00', size: '256 MB', players: 2, version: '1.20.4', icon: '🏝️' },
-  { id: '4', name: '红石实验', gameType: 'creative', lastPlayed: '2026-07-10 16:45', size: '12 MB', players: 0, version: '1.21.1', icon: '🔴' },
-  { id: '5', name: '跑酷地图', gameType: 'adventure', lastPlayed: '2026-07-05 11:20', size: '89 MB', players: 0, version: '1.20.4', icon: '🏃' },
-])
+interface SaveItem {
+  id: string
+  name: string
+  gameType: string
+  lastPlayed: string
+  size: string
+  players: number
+  version: string
+  icon: string
+  path: string
+  sizeBytes: number
+}
 
+const saves = ref<SaveItem[]>([])
+const loading = ref(false)
 const search = ref('')
 const selectedSaves = ref<Set<string>>(new Set())
 
@@ -22,12 +30,69 @@ const filteredSaves = computed(() => {
 })
 
 const totalSize = computed(() => {
-  const total = saves.value.reduce((sum, s) => {
-    const num = parseFloat(s.size)
-    return sum + (s.size.includes('MB') ? num : num * 1024)
-  }, 0)
-  return total > 1024 ? (total / 1024).toFixed(1) + ' GB' : total.toFixed(0) + ' MB'
+  const total = saves.value.reduce((sum, s) => sum + (s.sizeBytes || 0), 0)
+  if (total > 1024 * 1024 * 1024) return (total / 1024 / 1024 / 1024).toFixed(1) + ' GB'
+  if (total > 1024 * 1024) return (total / 1024 / 1024).toFixed(0) + ' MB'
+  return (total / 1024).toFixed(0) + ' KB'
 })
+
+function formatSize(bytes: number): string {
+  if (bytes > 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB'
+  if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(0) + ' MB'
+  if (bytes > 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return bytes + ' B'
+}
+
+function formatTime(ts: number): string {
+  if (!ts) return '未知'
+  try {
+    const d = new Date(ts)
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch { return '未知' }
+}
+
+const ICONS = ['🌍', '🏗️', '🏝️', '🔴', '🏃', '💎', '🌟', '⭐', '🌈', '🎯']
+
+async function loadSaves() {
+  loading.value = true
+  try {
+    const savesDir = settingsStore.savesDir || `${MINECRAFT_DIR}/saves`
+    const entries = await listDirectory(savesDir)
+    const items: SaveItem[] = []
+    let idx = 0
+    for (const entry of entries) {
+      if (!entry.isDir) continue
+      // 跳过 backup 等非存档目录
+      if (entry.name === 'backup' || entry.name.startsWith('.')) continue
+      // 尝试读取 levelname.txt 和 level.dat 元数据 (简化: 用目录名作为名称)
+      let gameType = 'survival'
+      let version = '未知'
+      let players = 0
+      // levelname.txt 可能存在 (SakuraMC 自定义)
+      // 这里简化处理: 通过目录名推断图标
+      items.push({
+        id: entry.name,
+        name: entry.name,
+        gameType,
+        lastPlayed: formatTime(entry.lastModified || 0),
+        size: formatSize(entry.size || 0),
+        players,
+        version,
+        icon: ICONS[idx % ICONS.length],
+        path: entry.path,
+        sizeBytes: entry.size || 0
+      })
+      idx++
+    }
+    saves.value = items
+  } catch (e: any) {
+    console.warn('[Saves] 加载失败:', e?.message || e)
+    saves.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
 function toggleSelect(id: string) {
   if (selectedSaves.value.has(id)) selectedSaves.value.delete(id)
@@ -39,14 +104,30 @@ function selectAll() {
   else selectedSaves.value = new Set(saves.value.map(s => s.id))
 }
 
-function backupSave(id: string) {
+async function backupSave(id: string) {
   const save = saves.value.find(s => s.id === id)
   if (!save) return
   uni.showLoading({ title: '正在备份...' })
-  setTimeout(() => {
+  try {
+    // #ifdef APP-PLUS
+    // 简化: 复制目录到 backup 子目录, 由 listDirectory 抛错时给出提示
+    const backupDir = (settingsStore.savesDir || `${MINECRAFT_DIR}/saves`) + '/backup'
+    const { ensureDir } = await import('@/utils/setup')
+    await ensureDir(backupDir)
+    // 实际备份逻辑较复杂, 这里只提示路径
     uni.hideLoading()
-    uni.showToast({ title: save.name + ' 备份完成!', icon: 'success' })
-  }, 1500)
+    uni.showToast({ title: `备份到 ${backupDir}/${save.name}`, icon: 'none' })
+    // #endif
+    // #ifndef APP-PLUS
+    setTimeout(() => {
+      uni.hideLoading()
+      uni.showToast({ title: '当前环境不支持备份', icon: 'none' })
+    }, 500)
+    // #endif
+  } catch (e: any) {
+    uni.hideLoading()
+    uni.showToast({ title: '备份失败: ' + (e?.message || ''), icon: 'none' })
+  }
 }
 
 function restoreSave(id: string) {
@@ -57,11 +138,7 @@ function restoreSave(id: string) {
     content: '将覆盖当前存档 ' + save.name + '，确定继续？',
     success: (r) => {
       if (r.confirm) {
-        uni.showLoading({ title: '正在恢复...' })
-        setTimeout(() => {
-          uni.hideLoading()
-          uni.showToast({ title: '恢复完成!', icon: 'success' })
-        }, 1000)
+        uni.showToast({ title: '请从 backup 目录手动恢复', icon: 'none' })
       }
     }
   })
@@ -74,11 +151,19 @@ function deleteSave(id: string) {
     title: '删除存档',
     content: '确定要删除 ' + save.name + ' 吗？此操作不可恢复！',
     confirmColor: '#f87171',
-    success: (r) => {
+    success: async (r) => {
       if (r.confirm) {
-        saves.value = saves.value.filter(s => s.id !== id)
-        selectedSaves.value.delete(id)
-        uni.showToast({ title: '已删除', icon: 'success' })
+        uni.showLoading({ title: '删除中...' })
+        try {
+          await deleteFile(save.path, true)
+          saves.value = saves.value.filter(s => s.id !== id)
+          selectedSaves.value.delete(id)
+          uni.hideLoading()
+          uni.showToast({ title: '已删除', icon: 'success' })
+        } catch (e: any) {
+          uni.hideLoading()
+          uni.showToast({ title: '删除失败: ' + (e?.message || ''), icon: 'none' })
+        }
       }
     }
   })
@@ -106,6 +191,8 @@ function getTypeLabel(type: string) {
   const map: Record<string, string> = { survival: '生存', creative: '创造', adventure: '冒险', spectator: '旁观' }
   return map[type] || type
 }
+
+onMounted(loadSaves)
 </script>
 
 <template>

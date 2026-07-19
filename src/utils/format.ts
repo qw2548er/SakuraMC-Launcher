@@ -54,6 +54,14 @@ export function relativeTime(ts: number): string {
 
 export function copyText(text: string): Promise<boolean> {
   return new Promise(resolve => {
+    // #ifdef APP-PLUS
+    uni.setClipboardData({
+      data: text,
+      success: () => resolve(true),
+      fail: () => resolve(false)
+    })
+    // #endif
+    // #ifdef H5
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(text).then(() => resolve(true)).catch(() => {
         fallbackCopy(text)
@@ -63,10 +71,20 @@ export function copyText(text: string): Promise<boolean> {
       fallbackCopy(text)
       resolve(true)
     }
+    // #endif
+    // #ifndef APP-PLUS || H5
+    // 其他平台 (如小程序) 退化为 uni.setClipboardData
+    uni.setClipboardData({
+      data: text,
+      success: () => resolve(true),
+      fail: () => resolve(false)
+    })
+    // #endif
   })
 }
 
 function fallbackCopy(text: string) {
+  if (typeof document === 'undefined') return
   const ta = document.createElement('textarea')
   ta.value = text
   ta.style.position = 'fixed'
@@ -78,6 +96,32 @@ function fallbackCopy(text: string) {
 }
 
 export function downloadFile(filename: string, content: string | Blob) {
+  // #ifdef APP-PLUS
+  // APP 端没有 DOM, 使用 plus.runtime 下载到本地后打开
+  try {
+    // @ts-ignore
+    const downloader = plus.downloader?.createDownload
+    if (typeof downloader === 'function' && typeof content === 'string') {
+      // 仅支持远程 URL 下载, 字符串内容直接写入临时文件
+      const tmpPath = `_doc/${filename}`
+      // @ts-ignore
+      plus.io?.resolveLocalFileSystemURL?.('_doc', (entry: any) => {
+        entry.getFile(filename, { create: true }, (fileEntry: any) => {
+          fileEntry.createWriter((writer: any) => {
+            writer.write(content)
+            uni.showToast({ title: '已保存到 ' + tmpPath, icon: 'none' })
+          })
+        })
+      }, () => uni.showToast({ title: '保存失败', icon: 'none' }))
+      return
+    }
+    uni.setClipboardData({ data: typeof content === 'string' ? content : '[blob]' })
+    uni.showToast({ title: '已复制到剪贴板', icon: 'none' })
+  } catch {
+    uni.setClipboardData({ data: typeof content === 'string' ? content : '[blob]' })
+  }
+  // #endif
+  // #ifdef H5
   const blob = content instanceof Blob ? content : new Blob([content], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -87,6 +131,12 @@ export function downloadFile(filename: string, content: string | Blob) {
   a.click()
   document.body.removeChild(a)
   setTimeout(() => URL.revokeObjectURL(url), 100)
+  // #endif
+  // #ifndef APP-PLUS || H5
+  // 其他平台: 提示用户复制内容
+  uni.setClipboardData({ data: typeof content === 'string' ? content : '[blob]' })
+  uni.showToast({ title: '已复制到剪贴板', icon: 'none' })
+  // #endif
 }
 
 export function isValidMCUsername(name: string): boolean {
@@ -114,6 +164,23 @@ export function throttle<T extends (...args: any[]) => any>(fn: T, delay = 300):
 }
 
 export function detectPlatform(): 'android' | 'ios' | 'windows' | 'macos' | 'linux' | 'web' {
+  // APP-PLUS 端通过 uni.getSystemInfoSync 获取真实平台信息
+  // #ifdef APP-PLUS
+  try {
+    const info = uni.getSystemInfoSync()
+    const p = (info.platform || '').toLowerCase()
+    if (p === 'android') return 'android'
+    if (p === 'ios') return 'ios'
+    // 某些情况下 osName 更可靠
+    const os = (info.osName || '').toLowerCase()
+    if (os === 'android') return 'android'
+    if (os === 'ios') return 'ios'
+    if (os === 'windows' || os === 'win') return 'windows'
+    if (os === 'macos' || os === 'osx') return 'macos'
+    if (os === 'linux') return 'linux'
+  } catch { /* ignore */ }
+  // #endif
+  // H5 / 其他: 通过 navigator.userAgent 判断
   if (typeof navigator === 'undefined') return 'web'
   const ua = navigator.userAgent.toLowerCase()
   if (/android/.test(ua)) return 'android'
@@ -155,6 +222,18 @@ export function getSkinBodyUrl(uuid: string): string {
 }
 
 export function detectArch(): 'amd64' | 'arm64' | '386' | 'arm' {
+  // APP-PLUS 端通过 uni.getSystemInfoSync 获取真实架构
+  // #ifdef APP-PLUS
+  try {
+    const info = uni.getSystemInfoSync()
+    const cpu = (info.cpuType || info.deviceModel || '').toLowerCase()
+    if (/arm64|aarch64/.test(cpu)) return 'arm64'
+    if (/x64|amd64|x86_64/.test(cpu)) return 'amd64'
+    if (/arm/.test(cpu)) return 'arm'
+    if (/x86|i386|ia32/.test(cpu)) return '386'
+  } catch { /* ignore */ }
+  // #endif
+  // H5 / 其他
   if (typeof navigator === 'undefined') return 'amd64'
   // @ts-ignore
   const ua = navigator.userAgentData?.platform || navigator.platform || ''

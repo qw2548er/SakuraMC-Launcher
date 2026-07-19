@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import type { ISettings, DownloadSource } from '@/types'
+import type { ISettings } from '@/types'
+import type { DownloadSource } from '@/api/bmcl'
 import { detectPlatform } from '@/utils/format'
 
 const STORAGE_KEY = 'sakuram.settings.v1'
@@ -22,6 +23,9 @@ const defaultSettings: ISettings = {
   showOldVersions: false,
   fullscreen: true,
   autoJoinServer: false,
+  autoInstallForge: false,
+  autoInstallFabric: false,
+  autoInstallOptifine: false,
   theme: 'dark',
   language: 'zh-CN',
   frpcBinaryPath: '',

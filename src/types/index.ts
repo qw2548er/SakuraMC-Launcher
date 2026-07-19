@@ -129,6 +129,9 @@ export interface ISettings {
   showOldVersions: boolean
   fullscreen: boolean
   autoJoinServer: boolean
+  autoInstallForge: boolean
+  autoInstallFabric: boolean
+  autoInstallOptifine: boolean
   theme: 'dark' | 'light' | 'auto'
   language: 'zh-CN' | 'zh-TW' | 'en-US'
   frpcBinaryPath: string

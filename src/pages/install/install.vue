@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useJavaStore } from '@/stores/java'
+import { getAdoptiumDownloadUrl } from '@/utils/java'
+import { detectPlatform, detectArch } from '@/utils/format'
+import { downloadFile } from '@/utils/downloader'
+import { ensureDir, JAVA_DIR } from '@/utils/setup'
 import McButton from '@/components/mc-button.vue'
 
 const javaStore = useJavaStore()
 
-const step = ref<'welcome' | 'select' | 'installing' | 'done'>('welcome')
+const step = ref<'welcome' | 'select' | 'installing' | 'done' | 'error'>('welcome')
 const selectedJres = ref<string[]>(['jre17'])
 const installProgress = ref(0)
 const currentInstall = ref('')
 const installStep = ref(0)
+const errorMsg = ref('')
+const installedPaths = ref<Record<string, string>>({})
 
 const jreList = [
-  { id: 'jre8', name: 'JRE 8', version: '1.8.0_442', size: '约 80 MB', icon: '☕' },
-  { id: 'jre11', name: 'JRE 11', version: '11.0.23', size: '约 120 MB', icon: '☕' },
-  { id: 'jre17', name: 'JRE 17', version: '17.0.10', size: '约 150 MB', icon: '☕' },
-  { id: 'jre21', name: 'JRE 21', version: '21.0.1', size: '约 180 MB', icon: '☕' },
-  { id: 'jre25', name: 'JRE 25', version: '25.0.3', size: '约 200 MB', icon: '☕' }
+  { id: 'jre8', name: 'JRE 8', version: '1.8.0_442', major: 8, size: '约 80 MB', icon: '☕' },
+  { id: 'jre11', name: 'JRE 11', version: '11.0.23', major: 11, size: '约 120 MB', icon: '☕' },
+  { id: 'jre17', name: 'JRE 17', version: '17.0.10', major: 17, size: '约 150 MB', icon: '☕' },
+  { id: 'jre21', name: 'JRE 21', version: '21.0.1', major: 21, size: '约 180 MB', icon: '☕' },
+  { id: 'jre25', name: 'JRE 25', version: '25.0.3', major: 25, size: '约 200 MB', icon: '☕' }
 ]
 
 function toggleJre(id: string) {
@@ -34,44 +40,101 @@ function isSelected(id: string) {
   return selectedJres.value.includes(id)
 }
 
-function startInstall() {
+async function startInstall() {
   step.value = 'installing'
   installProgress.value = 0
   installStep.value = 0
-  doInstall()
+  errorMsg.value = ''
+  try {
+    await doInstall()
+  } catch (e: any) {
+    console.error('[Install] JRE 安装失败:', e)
+    errorMsg.value = e?.message || '安装失败'
+    step.value = 'error'
+  }
 }
 
 async function doInstall() {
   const items = selectedJres.value
   const totalSteps = items.length
-  
+  const platform = detectPlatform()
+  const arch = detectArch()
+  // Adoptium API 仅支持 windows/linux/macos
+  const apiPlatform: 'windows' | 'linux' | 'macos' =
+    platform === 'windows' ? 'windows'
+    : platform === 'macos' ? 'macos'
+    : 'linux' // android/ios/web 退化为 linux
+  const apiArch: 'amd64' | 'arm64' = arch === 'arm64' ? 'arm64' : 'amd64'
+
+  // 确保 Java 安装根目录存在
+  // #ifdef APP-PLUS
+  await ensureDir(JAVA_DIR)
+  // #endif
+
   for (let i = 0; i < items.length; i++) {
     const jre = jreList.find(j => j.id === items[i])
     if (!jre) continue
-    
+
     currentInstall.value = `${jre.name} (${jre.version})`
     installStep.value = i
-    
-    for (let p = 0; p <= 100; p += 5) {
-      installProgress.value = Math.floor((i + p / 100) / totalSteps * 100)
-      await new Promise(r => setTimeout(r, 60))
-    }
-  }
-  
-  const firstJre = jreList.find(j => j.id === selectedJres.value[0])
-  if (firstJre) {
-    javaStore.selectVersion(selectedJres.value[0])
-    javaStore.updateVersion(selectedJres.value[0], {
-      path: './runtime/' + firstJre.name.toLowerCase().replace(' ', '-') + '/bin/java'
+
+    // 获取下载链接
+    installProgress.value = Math.floor((i + 0.05) / totalSteps * 100)
+    const url = await getAdoptiumDownloadUrl(jre.major, apiPlatform, apiArch)
+    if (!url) throw new Error(`获取 ${jre.name} 下载链接失败`)
+
+    // 推断文件扩展名
+    const ext = apiPlatform === 'windows' ? 'zip' : 'tar.gz'
+    const saveName = `${jre.id}.${ext}`
+    const savePath = `${JAVA_DIR}/${saveName}`
+
+    // 下载
+    await new Promise<void>((resolve, reject) => {
+      downloadFile({
+        url,
+        savePath,
+        onProgress: (written, total) => {
+          if (total > 0) {
+            const pct = Math.min(0.95, written / total)
+            installProgress.value = Math.floor((i + pct) / totalSteps * 100)
+          }
+        },
+        onSuccess: async (path) => {
+          installedPaths.value[jre.id] = path
+          installProgress.value = Math.floor((i + 1) / totalSteps * 100)
+          resolve()
+        },
+        onError: (e) => reject(e)
+      }).catch(reject)
     })
   }
-  
+
+  // 选中第一个安装的 JRE, 写入 javaStore
+  const firstId = selectedJres.value[0]
+  if (firstId) {
+    const jre = jreList.find(j => j.id === firstId)
+    const firstPath = installedPaths.value[firstId]
+    javaStore.selectVersion(firstId)
+    if (jre && firstPath) {
+      javaStore.updateVersion(firstId, {
+        path: firstPath,
+        version: jre.version,
+        majorVersion: jre.major
+      })
+    }
+  }
+
   step.value = 'done'
 }
 
 function finish() {
   uni.setStorageSync('sakuram.firstrun.done', '1')
   uni.reLaunch({ url: '/pages/index/index' })
+}
+
+function retry() {
+  step.value = 'select'
+  errorMsg.value = ''
 }
 
 const totalProgress = computed(() => installProgress.value)
@@ -159,7 +222,7 @@ const totalProgress = computed(() => installProgress.value)
         <view class="install__done-icon">🎉</view>
         <text class="install__panel-title">安装完成！</text>
         <text class="install__panel-desc">已成功安装 {{ selectedJres.length }} 个 Java 版本</text>
-        
+
         <view class="install__done-list">
           <view
             v-for="jre in jreList.filter(j => selectedJres.includes(j.id))"
@@ -170,8 +233,18 @@ const totalProgress = computed(() => installProgress.value)
             <text class="done-item__text">{{ jre.name }} {{ jre.version }}</text>
           </view>
         </view>
-        
+
         <McButton size="lg" glow block @click="finish">进入启动器 →</McButton>
+      </view>
+
+      <view v-else-if="step === 'error'" class="install__panel">
+        <view class="install__done-icon">⚠️</view>
+        <text class="install__panel-title">安装失败</text>
+        <text class="install__panel-desc">{{ errorMsg }}</text>
+        <view class="install__actions">
+          <McButton variant="ghost" @click="step = 'welcome'">返回首页</McButton>
+          <McButton glow @click="retry">重试</McButton>
+        </view>
       </view>
     </view>
     

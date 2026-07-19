@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useSettingsStore } from '@/stores/settings'
+import { listDirectory, readFileText, deleteFile, MINECRAFT_DIR } from '@/utils/setup'
 
 type LogLevel = 'info' | 'warn' | 'error' | 'debug'
 
@@ -11,27 +13,103 @@ interface LogEntry {
   message: string
 }
 
-const logs = ref<LogEntry[]>([
-  { id: '1', time: '18:23:45', level: 'info', source: 'Minecraft', message: 'Loading Minecraft 1.21.1...' },
-  { id: '2', time: '18:23:46', level: 'info', source: 'Minecraft', message: 'Vanilla Minecraft version: 1.21.1' },
-  { id: '3', time: '18:23:47', level: 'info', source: 'Minecraft', message: 'OpenGL Version: 4.6.0 NVIDIA 546.17' },
-  { id: '4', time: '18:23:48', level: 'warn', source: 'Fabric', message: 'Mod "sodium-extra" does not have a valid version range' },
-  { id: '5', time: '18:23:49', level: 'info', source: 'Minecraft', message: 'Reloading ResourceManager: Default, Faithful 32x' },
-  { id: '6', time: '18:23:50', level: 'info', source: 'Minecraft', message: 'Sound engine initializing' },
-  { id: '7', time: '18:23:52', level: 'info', source: 'Minecraft', message: 'Created: 1024x512x4 minecraft:textures/atlas/blocks.png-atlas' },
-  { id: '8', time: '18:23:55', level: 'info', source: 'Minecraft', message: 'Preparing start region for dimension minecraft:overworld' },
-  { id: '9', time: '18:23:58', level: 'info', source: 'Minecraft', message: 'Changing view distance to 12, using 33 chunks' },
-  { id: '10', time: '18:24:00', level: 'info', source: 'Minecraft', message: 'Setting default language: zh_cn' },
-  { id: '11', time: '18:24:02', level: 'warn', source: 'Sodium', message: 'Skipping incompatibly named option: biome_blend_radius' },
-  { id: '12', time: '18:24:05', level: 'info', source: 'Minecraft', message: 'Done! (24.5s) For help, type "help"' },
-  { id: '13', time: '18:30:15', level: 'error', source: 'Minecraft', message: 'Ticking entity: java.lang.NullPointerException at entity.Tick()' },
-  { id: '14', time: '18:30:16', level: 'error', source: 'Minecraft', message: 'Saved the game' },
-  { id: '15', time: '18:30:16', level: 'info', source: 'Minecraft', message: 'Stopping!' },
-])
-
+const settingsStore = useSettingsStore()
+const logs = ref<LogEntry[]>([])
+const availableFiles = ref<{ name: string; path: string }[]>([])
+const currentFile = ref<string>('')
+const loading = ref(false)
 const filterLevel = ref<LogLevel | 'all'>('all')
 const search = ref('')
 const autoScroll = ref(true)
+
+// 解析单行日志, 推断级别与来源
+const LOG_PATTERN = /^\s*(?:(\d{2}:\d{2}:\d{2})\s+)?\[?(\w+)[/\]]+\s*\[?(INFO|WARN|WARNING|ERROR|DEBUG|TRACE)\]?\s*:?\s*(.*)$/i
+
+function parseLine(line: string): LogEntry | null {
+  if (!line.trim()) return null
+  let time = ''
+  let source = 'Minecraft'
+  let level: LogLevel = 'info'
+  let message = line
+
+  const m = line.match(LOG_PATTERN)
+  if (m) {
+    if (m[1]) time = m[1]
+    if (m[2]) source = m[2]
+    const lv = (m[3] || '').toUpperCase()
+    if (lv === 'WARN' || lv === 'WARNING') level = 'warn'
+    else if (lv === 'ERROR') level = 'error'
+    else if (lv === 'DEBUG' || lv === 'TRACE') level = 'debug'
+    else level = 'info'
+    message = m[4] || line
+  } else {
+    // 兜底: 提取时间戳
+    const timeMatch = line.match(/(\d{2}:\d{2}:\d{2})/)
+    if (timeMatch) {
+      time = timeMatch[1]
+      message = line.substring(line.indexOf(time) + 8)
+    }
+    if (/error|exception|failed|fatal/i.test(line)) level = 'error'
+    else if (/warn/i.test(line)) level = 'warn'
+    else if (/debug|trace/i.test(line)) level = 'debug'
+  }
+
+  if (!time) {
+    const now = new Date()
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  }
+
+  return {
+    id: `${time}-${Math.random().toString(36).slice(2, 8)}`,
+    time,
+    level,
+    source,
+    message: message.trim()
+  }
+}
+
+async function loadLogFiles() {
+  loading.value = true
+  try {
+    const logsDir = settingsStore.logsDir || `${MINECRAFT_DIR}/logs`
+    const entries = await listDirectory(logsDir)
+    const files = entries
+      .filter(e => !e.isDir && /\.log$/i.test(e.name))
+      .map(e => ({ name: e.name, path: e.path }))
+    availableFiles.value = files
+    // 默认加载 latest.log, 若不存在则加载第一个
+    const latest = files.find(f => f.name === 'latest.log') || files[0]
+    if (latest) await loadLogFile(latest.path)
+  } catch (e: any) {
+    console.warn('[Logs] 加载日志目录失败:', e?.message || e)
+    availableFiles.value = []
+    logs.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadLogFile(path: string) {
+  loading.value = true
+  currentFile.value = path
+  try {
+    const text = await readFileText(path)
+    // 限制最多解析 2000 行, 避免内存压力
+    const lines = text.split(/\r?\n/).slice(-2000)
+    const entries: LogEntry[] = []
+    for (const line of lines) {
+      const entry = parseLine(line)
+      if (entry) entries.push(entry)
+    }
+    logs.value = entries
+  } catch (e: any) {
+    console.warn('[Logs] 读取日志文件失败:', e?.message || e)
+    logs.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
 const filteredLogs = computed(() => {
   let result = logs.value
@@ -69,15 +147,49 @@ function getLevelLabel(level: LogLevel) {
 function clearLogs() {
   uni.showModal({
     title: '清空日志',
-    content: '确定清空所有日志？（仅清空客户端显示）',
-    success: (r) => { if (r.confirm) logs.value = [] }
+    content: '确定清空当前日志文件内容？（不可恢复）',
+    success: async (r) => {
+      if (!r.confirm) return
+      if (!currentFile.value) {
+        logs.value = []
+        return
+      }
+      // #ifdef APP-PLUS
+      try {
+        await deleteFile(currentFile.value)
+        logs.value = []
+        uni.showToast({ title: '已删除日志文件', icon: 'success' })
+        await loadLogFiles()
+      } catch (e: any) {
+        uni.showToast({ title: '清空失败: ' + (e?.message || ''), icon: 'none' })
+      }
+      // #endif
+      // #ifndef APP-PLUS
+      logs.value = []
+      uni.showToast({ title: '已清空显示', icon: 'none' })
+      // #endif
+    }
   })
 }
 
-function copyLogs() {
+async function copyLogs() {
   const text = filteredLogs.value.map(l => `[${l.time}] [${l.source}/${l.level.toUpperCase()}] ${l.message}`).join('\n')
-  uni.setClipboardData({ data: text, showToast: true })
+  uni.setClipboardData({
+    data: text,
+    showToast: true,
+    success: () => {},
+    fail: () => uni.showToast({ title: '复制失败', icon: 'none' })
+  })
 }
+
+function switchFile(e: any) {
+  const idx = e?.detail?.value
+  if (typeof idx === 'number' && availableFiles.value[idx]) {
+    loadLogFile(availableFiles.value[idx].path)
+  }
+}
+
+onMounted(loadLogFiles)
 </script>
 
 <template>
@@ -113,6 +225,15 @@ function copyLogs() {
           <text>错误</text>
           <text class="logs__filter-count logs__filter-count--error">{{ logCounts.error }}</text>
         </view>
+      </view>
+      <view v-if="availableFiles.length > 0" class="logs__file-picker">
+        <picker mode="selector" :range="availableFiles" range-key="name" @change="switchFile">
+          <view class="logs__file-current">
+            <text class="logs__file-icon">📄</text>
+            <text class="logs__file-name">{{ currentFile ? currentFile.split('/').pop() : '选择日志文件' }}</text>
+            <text class="logs__file-count">{{ availableFiles.length }} 个文件</text>
+          </view>
+        </picker>
       </view>
       <view class="logs__search-row">
         <input class="logs__search" v-model="search" placeholder="搜索日志内容..." placeholder-style="color: #666" />
@@ -158,6 +279,14 @@ function copyLogs() {
   }
   &__filter { padding: 0 24rpx 12rpx; }
   &__filter-tabs { display: flex; gap: 8rpx; margin-bottom: 12rpx; }
+  &__file-picker { margin-bottom: 12rpx; }
+  &__file-current {
+    display: flex; align-items: center; gap: 8rpx;
+    padding: 12rpx 16rpx; background: rgba(255,255,255,0.06); border-radius: 10rpx;
+  }
+  &__file-icon { font-size: 26rpx; }
+  &__file-name { flex: 1; font-size: 24rpx; color: #ffb7d5; }
+  &__file-count { font-size: 22rpx; color: #888; }
   &__filter-tab {
     flex: 1; display: flex; align-items: center; justify-content: center; gap: 6rpx;
     padding: 12rpx 8rpx; font-size: 24rpx; color: #888;

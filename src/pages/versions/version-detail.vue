@@ -6,9 +6,10 @@ import { useSettingsStore } from '@/stores/settings'
 import McCard from '@/components/mc-card.vue'
 import McButton from '@/components/mc-button.vue'
 import McBadge from '@/components/mc-badge.vue'
-import { downloadFile } from '@/utils/downloader'
+import { downloadFile, ensureDirectory } from '@/utils/downloader'
 import { formatBytes, formatTime } from '@/utils/format'
 import * as bmcl from '@/api/bmcl'
+import { saveJsonToFile } from '@/stores/version'
 
 const versionStore = useVersionStore()
 const settingsStore = useSettingsStore()
@@ -17,8 +18,12 @@ const downloading = ref(false)
 const showLoader = ref<'forge' | 'fabric' | 'quilt' | 'neoforge' | 'optifine' | null>(null)
 const loaderVersion = ref('')
 
-onLoad((q: any) => {
+onLoad(async (q: any) => {
   versionId.value = q?.id || ''
+  // 确保 manifest 已加载
+  if (!versionStore.manifest) {
+    await versionStore.loadManifest()
+  }
   if (versionId.value) versionStore.loadModLoaders(versionId.value)
 })
 
@@ -30,7 +35,7 @@ const currentVersion = computed(() => {
 const installed = computed(() => versionStore.installed[versionId.value])
 
 const loaders = computed(() => versionStore.modLoaders[versionId.value] || [])
-const loadingLoaders = computed(() => versionStore.loadingLoaders[versionId.value])
+const loadingLoaders = computed(() => !!versionStore.loadingLoaders[versionId.value])
 
 const filteredLoaders = computed(() => {
   if (!showLoader.value) return []
@@ -89,6 +94,18 @@ async function downloadVersion() {
         .replace('https://launcher.mojang.com', mcbbsBase)
         .replace('https://piston-data.mojang.com', mcbbsBase)
     }
+
+    // 准备版本目录和保存路径
+    const versionsDir = settingsStore.versionsDir || '/storage/emulated/0/SakuraMC/.minecraft/versions'
+    const versionDir = `${versionsDir}/${versionId.value}`
+    const jarPath = `${versionDir}/${versionId.value}.jar`
+    const jsonPath = `${versionDir}/${versionId.value}.json`
+
+    // 确保目录存在
+    await ensureDirectory(versionDir)
+    // 保存版本 JSON (启动游戏必需)
+    await saveJsonToFile(jsonPath, versionJson)
+
     const jarTask = versionStore.addDownload({
       name: `Minecraft ${versionId.value} - 客户端`,
       url: clientUrl,
@@ -96,37 +113,41 @@ async function downloadVersion() {
       downloaded: 0,
       status: 'downloading'
     })
-    downloadFile({
-      url: clientUrl,
-      onProgress: (downloaded, total, speed) => {
-        versionStore.updateDownload(jarTask.id, {
-          downloaded,
-          total: total || client.size || 0,
-          speed
-        })
-      },
-      onSuccess: (path) => {
-        versionStore.updateDownload(jarTask.id, {
-          status: 'completed',
-          downloaded: client.size || 0,
-          total: client.size || 0
-        })
-        const v = currentVersion.value!
+    try {
+      await downloadFile({
+        url: clientUrl,
+        savePath: jarPath,
+        onProgress: (downloaded, total, speed) => {
+          versionStore.updateDownload(jarTask.id, {
+            downloaded,
+            total: total || client.size || 0,
+            speed
+          })
+        }
+      })
+      // 下载完成,更新状态
+      versionStore.updateDownload(jarTask.id, {
+        status: 'completed',
+        downloaded: client.size || 0,
+        total: client.size || 0
+      })
+      const v = currentVersion.value
+      if (v) {
         versionStore.markInstalled({
           ...v,
           installed: true,
-          installedPath: path || `./.minecraft/versions/${v.id}`,
-          jarSize: client.size
+          installedPath: jarPath,
+          size: client.size
         })
-        downloading.value = false
-        uni.showToast({ title: '下载完成', icon: 'success' })
-      },
-      onError: (e) => {
-        versionStore.updateDownload(jarTask.id, { status: 'error', error: e.message })
-        downloading.value = false
-        uni.showToast({ title: '下载失败: ' + e.message, icon: 'none' })
       }
-    })
+      versionStore.selectedId = versionId.value
+      downloading.value = false
+      uni.showToast({ title: '下载完成', icon: 'success' })
+    } catch (e: any) {
+      versionStore.updateDownload(jarTask.id, { status: 'error', error: e.message })
+      downloading.value = false
+      uni.showToast({ title: '下载失败: ' + e.message, icon: 'none' })
+    }
   } catch (e: any) {
     downloading.value = false
     uni.showToast({ title: '下载失败: ' + (e.message || ''), icon: 'none' })
@@ -135,7 +156,20 @@ async function downloadVersion() {
 
 function downloadModLoader(type: string, version: string) {
   if (!versionId.value) return
-  const url = `${bmcl.getApiBase(settingsStore.downloadSource)}/mc/${type}/download?mcversion=${versionId.value}&version=${version}`
+  // 根据加载器类型构造正确的下载 URL
+  let url = ''
+  const apiBase = bmcl.getApiBase(settingsStore.downloadSource)
+  if (type === 'forge') {
+    url = `${apiBase}/mc/forge/download?mcversion=${versionId.value}&version=${version}&category=installer&format=jar`
+  } else if (type === 'optifine') {
+    url = bmcl.getOptiFineDownloadUrl(version)
+  } else if (type === 'fabric') {
+    url = `https://meta.fabricmc.net/v2/versions/loader/${versionId.value}/${version}/profile/json`
+  } else if (type === 'neoforge') {
+    url = `${apiBase}/mc/neoforge/version/${version}/download`
+  } else {
+    url = `${apiBase}/mc/${type}/download?mcversion=${versionId.value}&version=${version}`
+  }
   const task = versionStore.addDownload({
     name: `${type}-${version} for ${versionId.value}`,
     url,
@@ -151,6 +185,10 @@ function downloadModLoader(type: string, version: string) {
     onSuccess: () => {
       versionStore.updateDownload(task.id, { status: 'completed' })
       uni.showToast({ title: type + ' 安装完成', icon: 'success' })
+    },
+    onError: (e) => {
+      versionStore.updateDownload(task.id, { status: 'error', error: e.message })
+      uni.showToast({ title: type + ' 下载失败: ' + e.message, icon: 'none' })
     }
   })
 }
@@ -192,7 +230,7 @@ function uninstall() {
           <view class="vd__meta">
             <text class="vd__meta-item">📦 类型: {{ currentVersion.type }}</text>
             <text class="vd__meta-item">📅 发布时间: {{ formatTime(currentVersion.releaseTime) }}</text>
-            <text class="vd__meta-item">🔗 来源: {{ settingsStore.downloadBase }}</text>
+            <text class="vd__meta-item">🔗 来源: {{ settingsStore.downloadSource.toUpperCase() }}</text>
           </view>
           <McButton block size="lg" glow :loading="downloading" @click="downloadVersion">⬇ 立即下载</McButton>
         </view>

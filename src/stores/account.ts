@@ -146,10 +146,10 @@ export const useAccountStore = defineStore('account', {
           createdAt: Date.now(),
           lastUsedAt: Date.now()
         }
-        // 去重
+        // 去重 (保留原 id 和 createdAt,只更新必要字段)
         const exist = this.accounts.find(a => a.type === 'microsoft' && a.uuid === profile.id)
         if (exist) {
-          Object.assign(exist, acc)
+          Object.assign(exist, { ...acc, id: exist.id, createdAt: exist.createdAt })
           this.selectedId = exist.id
         } else {
           this.accounts.push(acc)
@@ -160,7 +160,13 @@ export const useAccountStore = defineStore('account', {
         return 'success'
       } catch (e: any) {
         const msg = e?.message || ''
+        // pollDeviceToken 现在会抛出包含 error code 的 Error
         if (msg.includes('authorization_pending')) return 'pending'
+        if (msg.includes('slow_down')) {
+          // 微软要求收到 slow_down 时增大轮询间隔
+          if (this.msLoginFlow) this.msLoginFlow.interval += 5
+          return 'pending'
+        }
         if (msg.includes('expired_token')) {
           this.msLoginFlow = null
           this.msLoginError = '登录已过期'
@@ -179,19 +185,49 @@ export const useAccountStore = defineStore('account', {
       this.msLoginFlow = null
       this.msLoginError = null
     },
-    async refreshMicrosoftToken(id: string) {
+    async refreshMicrosoftToken(id: string): Promise<boolean> {
       const acc = this.accounts.find(a => a.id === id)
-      if (!acc?.refreshToken) return
+      if (!acc?.refreshToken) return false
       try {
         const t = await mojang.refreshMSToken(acc.refreshToken)
+        if (!t?.access_token) return false
         const result = await mojang.microsoftLogin(t.access_token)
+        if (!result?.tokens?.mcAccessToken) return false
         acc.accessToken = result.tokens.mcAccessToken
         acc.refreshToken = t.refresh_token
         acc.expiresAt = result.tokens.expiresAt
         this.persist()
-      } catch (e) {
-        console.warn('[Account] refresh failed', e)
+        return true
+      } catch (e: any) {
+        console.warn('[Account] refresh failed:', e?.message || e)
+        // refresh_token 失效或被吊销: 清空 token 标记, 但保留账号信息
+        if (/invalid_grant|invalid_request|invalid_client/i.test(e?.message || '')) {
+          acc.accessToken = undefined
+          acc.expiresAt = undefined
+          this.persist()
+        }
+        return false
       }
+    },
+    /**
+     * 在启动游戏前调用, 确保 Microsoft 账号的 access_token 仍有效
+     * - 距过期 < 5 分钟: 主动刷新
+     * - 已过期但有 refreshToken: 尝试刷新
+     * - 刷新失败返回 false, 调用方应提示用户重新登录
+     */
+    async ensureFreshToken(id: string): Promise<boolean> {
+      const acc = this.accounts.find(a => a.id === id)
+      if (!acc) return false
+      if (acc.type !== 'microsoft') return true // 离线账号无需刷新
+      const now = Date.now()
+      const REFRESH_WINDOW = 5 * 60 * 1000 // 5 分钟内将过期也刷新
+      if (acc.expiresAt && acc.expiresAt - now > REFRESH_WINDOW) {
+        return true // 仍然有效
+      }
+      if (!acc.refreshToken) {
+        return false
+      }
+      return await this.refreshMicrosoftToken(id)
     }
   }
 })

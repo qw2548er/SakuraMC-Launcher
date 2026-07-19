@@ -672,12 +672,15 @@ export function listDirectory(dirPath: string): Promise<Array<{
         path: dirPath,
         success: () => {
           try {
-            const entries = fs.listdirSync(dirPath)
+            // HTML5+ API: readdirSync 接收 { dirPath } 对象, 返回 [{ name, ... }] 数组
+            const entries = fs.readdirSync({ dirPath })
             const result: any[] = []
-            for (const name of entries) {
+            for (const item of entries) {
+              const name = item?.name || String(item)
+              if (!name || name === '.' || name === '..') continue
               const fullPath = `${dirPath}/${name}`
               try {
-                const stat = fs.statSync(fullPath)
+                const stat = fs.statSync({ path: fullPath })
                 result.push({
                   name,
                   path: fullPath,
@@ -739,16 +742,56 @@ export function readFileText(filePath: string): Promise<string> {
 
 /**
  * 删除文件或目录
+ * - 文件: 调用 fs.unlink
+ * - 目录: 调用 fs.rmdir (非递归) 或先递归清空再删除 (递归)
  */
-export function deleteFile(filePath: string): Promise<void> {
+export function deleteFile(filePath: string, recursive: boolean = true): Promise<void> {
   return new Promise((resolve, reject) => {
     // #ifdef APP-PLUS
     try {
       const fs = plus.io.getFileSystemManager()
-      fs.unlink({
-        filePath,
-        success: () => resolve(),
-        fail: (e: any) => reject(new Error(`删除失败: ${e.message}`))
+      // 先 stat 判断是文件还是目录
+      fs.stat({
+        path: filePath,
+        success: (statRes: any) => {
+          const stat = statRes.stats || statRes
+          if (stat && stat.isDirectory) {
+            // 目录删除
+            const doRmdir = () => {
+              fs.rmdir({
+                dirPath: filePath,
+                recursive,
+                success: () => resolve(),
+                fail: (e: any) => reject(new Error(`删除目录失败: ${e.message}`))
+              })
+            }
+            if (recursive) {
+              // 递归: 先清空目录内所有项, 再删除空目录
+              fs.readdir({
+                dirPath: filePath,
+                success: (readRes: any) => {
+                  const items: any[] = readRes.entries || readRes || []
+                  const tasks: Promise<void>[] = items.map((it: any) => {
+                    const name = it?.name || String(it)
+                    return deleteFile(`${filePath}/${name}`, true)
+                  })
+                  Promise.all(tasks).then(doRmdir).catch(e => reject(e))
+                },
+                fail: (e: any) => reject(new Error(`读取目录失败: ${e.message}`))
+              })
+            } else {
+              doRmdir()
+            }
+          } else {
+            // 文件删除
+            fs.unlink({
+              filePath,
+              success: () => resolve(),
+              fail: (e: any) => reject(new Error(`删除文件失败: ${e.message}`))
+            })
+          }
+        },
+        fail: (e: any) => reject(new Error(`获取文件信息失败: ${e.message}`))
       })
     } catch (e: any) {
       reject(e)

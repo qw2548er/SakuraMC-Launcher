@@ -32,7 +32,7 @@ const defaultBindings: KeyBinding[] = [
   { id: 'use', name: '使用/放置', key: '鼠标右键', category: '交互' },
   { id: 'pickBlock', name: '选取方块', key: '鼠标中键', category: '交互' },
   { id: 'inventory', name: '背包', key: 'E', category: '界面' },
-  { id: 'crafting', name: '工作台', key: 'Q', category: '界面' },
+  { id: 'crafting', name: '工作台', key: 'C', category: '界面' },
   { id: 'drop', name: '丢弃物品', key: 'Q', category: '物品' },
   { id: 'hotbar1', name: '快捷栏1', key: '1', category: '物品' },
   { id: 'hotbar2', name: '快捷栏2', key: '2', category: '物品' },
@@ -45,13 +45,11 @@ const defaultBindings: KeyBinding[] = [
   { id: 'hotbar9', name: '快捷栏9', key: '9', category: '物品' },
   { id: 'chat', name: '聊天', key: 'T', category: '界面' },
   { id: 'command', name: '命令', key: '/', category: '界面' },
-  { id: 'escape', name: '退出', key: 'Esc', category: '界面' },
-  { id: 'pause', name: '暂停', key: 'Esc', category: '界面' },
+  { id: 'escape', name: '退出/暂停', key: 'Esc', category: '界面' },
   { id: 'fullscreen', name: '全屏', key: 'F11', category: '界面' },
   { id: 'screenshot', name: '截图', key: 'F2', category: '界面' },
   { id: 'togglePerspective', name: '切换视角', key: 'F5', category: '界面' },
   { id: 'advancements', name: '进度', key: 'L', category: '界面' },
-  { id: 'spectatorOutlines', name: '旁观者轮廓', key: 'Shift+F1', category: '界面' },
 ]
 
 const categories = ['移动', '交互', '界面', '物品']
@@ -61,9 +59,10 @@ async function loadPresets() {
     // #ifdef APP-PLUS
     const fileSystem = plus.io.getFileSystemManager()
     const presetDir = '/storage/emulated/0/SakuraMC/control'
-    
+
     try {
-      const files = fileSystem.listdirSync(presetDir)
+      const result = fileSystem.readdirSync({ dirPath: presetDir })
+      const files: string[] = result.map((item: any) => item.name || item)
       for (const file of files) {
         if (file.endsWith('.json')) {
           const content = fileSystem.readFileSync(`${presetDir}/${file}`, 'utf-8')
@@ -72,10 +71,11 @@ async function loadPresets() {
         }
       }
     } catch {
-      fileSystem.mkdirSync(presetDir, true)
+      // 目录不存在,创建
+      fileSystem.mkdirSync({ dirPath: presetDir, recursive: true })
     }
     // #endif
-    
+
     if (presets.value.length === 0) {
       presets.value.push({
         id: 'default',
@@ -85,7 +85,7 @@ async function loadPresets() {
       })
       await savePreset(presets.value[0])
     }
-    
+
     selectedPreset.value = presets.value[0]
   } catch (e: any) {
     console.error('加载配置失败:', e)
@@ -100,18 +100,28 @@ async function loadPresets() {
 }
 
 async function savePreset(preset: ControlPreset) {
+  // #ifdef APP-PLUS
   try {
-    // #ifdef APP-PLUS
     const fileSystem = plus.io.getFileSystemManager()
     const presetDir = '/storage/emulated/0/SakuraMC/control'
-    fileSystem.mkdirSync(presetDir, true)
+    try { fileSystem.accessSync(presetDir) }
+    catch { fileSystem.mkdirSync({ dirPath: presetDir, recursive: true }) }
     fileSystem.writeFileSync(`${presetDir}/${preset.id}.json`, JSON.stringify(preset, null, 2), 'utf-8')
     uni.showToast({ title: '保存成功', icon: 'success' })
-    // #endif
   } catch (e: any) {
     console.error('保存配置失败:', e)
     uni.showToast({ title: '保存失败', icon: 'none' })
   }
+  // #endif
+  // #ifndef APP-PLUS
+  // H5/小程序端用 localStorage 持久化
+  try {
+    uni.setStorageSync(`sakuram.control.${preset.id}`, JSON.stringify(preset))
+    uni.showToast({ title: '保存成功', icon: 'success' })
+  } catch (e: any) {
+    uni.showToast({ title: '保存失败', icon: 'none' })
+  }
+  // #endif
 }
 
 async function deletePreset(preset: ControlPreset) {
@@ -119,7 +129,7 @@ async function deletePreset(preset: ControlPreset) {
     uni.showToast({ title: '不能删除默认布局', icon: 'none' })
     return
   }
-  
+
   uni.showModal({
     title: '确认删除',
     content: `确定要删除"${preset.name}"吗？`,
@@ -129,6 +139,9 @@ async function deletePreset(preset: ControlPreset) {
           // #ifdef APP-PLUS
           const fileSystem = plus.io.getFileSystemManager()
           fileSystem.unlinkSync(`/storage/emulated/0/SakuraMC/control/${preset.id}.json`)
+          // #endif
+          // #ifndef APP-PLUS
+          uni.removeStorageSync(`sakuram.control.${preset.id}`)
           // #endif
           presets.value = presets.value.filter(p => p.id !== preset.id)
           selectedPreset.value = presets.value[0] || null

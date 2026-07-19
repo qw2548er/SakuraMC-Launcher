@@ -182,7 +182,14 @@ function showLogs(id: number) {
 }
 
 function showFrpc() {
-  frpcInfo.value = { url: getFrpcBinaryUrl(), os: navigator?.userAgent || 'unknown' }
+  let os = 'unknown'
+  try {
+    const info = uni.getSystemInfoSync()
+    os = `${info.platform || 'unknown'} ${info.osName || ''} ${info.osVersion || ''}`.trim()
+  } catch {
+    os = 'unknown'
+  }
+  frpcInfo.value = { url: getFrpcBinaryUrl(), os }
   showFrpcModal.value = true
 }
 

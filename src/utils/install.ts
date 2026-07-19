@@ -26,15 +26,15 @@ export interface AssetInfo {
 export interface VersionJson {
   id: string
   type: string
-  mainClass: string
+  mainClass?: string
   minecraftArguments?: string
   arguments?: {
     game: Array<string | { rules?: any[]; value: string | string[] }>
     jvm: Array<string | { rules?: any[]; value: string | string[] }>
   }
-  libraries: LibraryInfo[]
-  assetIndex: { id: string; sha1: string; size: number; totalSize: number; url: string }
-  assets: string
+  libraries?: LibraryInfo[]
+  assetIndex?: { id: string; sha1: string; size: number; totalSize: number; url: string }
+  assets?: string
   downloads: {
     client: { sha1: string; size: number; url: string }
     server?: { sha1: string; size: number; url: string }
@@ -265,7 +265,11 @@ async function fileExistsWithSize(filePath: string, expectedSize: number): Promi
       const fs = plus.io.getFileSystemManager()
       fs.stat({
         path: filePath,
-        success: (stat: any) => resolve(stat.size === expectedSize),
+        success: (res: any) => {
+          // HTML5+ stat 回调返回 { stats: FileStat }, 但不同版本兼容
+          const stat = res?.stats || res
+          resolve(!!stat && stat.size === expectedSize)
+        },
         fail: () => resolve(false)
       })
     } catch {
@@ -557,12 +561,13 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
   ]
   
   // 游戏参数
+  const assetIndexId = versionJson.assetIndex?.id || versionJson.assets || versionId
   const gameArgs: string[] = [
     '--username', username,
     '--version', versionId,
     '--gameDir', gameDir,
     '--assetsDir', assetsDir,
-    '--assetIndex', versionJson.assetIndex?.id || versionJson.assets,
+    '--assetIndex', assetIndexId,
     '--uuid', uuid || '00000000-0000-0000-0000-000000000000',
     '--accessToken', accessToken,
     '--clientId', versionType,
@@ -596,11 +601,13 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
 export function buildLaunchCommand(options: LaunchOptions, versionJson: VersionJson, gameDir: string = MINECRAFT_DIR): string {
   const { jvmArgs, gameArgs, classpath, mainClass } = buildLaunchArgs(options, versionJson, gameDir)
   
+  const mainClassToUse = mainClass || 'net.minecraft.client.main.Main'
+  
   const cmd = [
     `cd "${gameDir}"`,
     `java ${jvmArgs.join(' ')}`,
     `-cp "${classpath}"`,
-    mainClass,
+    mainClassToUse,
     ...gameArgs
   ].join(' ')
   

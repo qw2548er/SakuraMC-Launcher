@@ -11,7 +11,7 @@ import {
   isVersionInstalled,
   type InstallStep 
 } from '@/utils/install'
-import { MINECRAFT_DIR } from '@/utils/setup'
+import { MINECRAFT_DIR, ensureDir } from '@/utils/setup'
 import { formatBytes } from '@/utils/format'
 
 const emit = defineEmits<{
@@ -71,51 +71,125 @@ function appendToTerminal(text: string) {
   })
 }
 
-async function runCommandOnAndroid(cmd: string) {
+async function extractNatives(versionJson: any, gameDir: string) {
+  // #ifdef APP-PLUS
+  try {
+    const fs = plus.io.getFileSystemManager()
+    const versionId = versionJson.id
+    const nativesDir = `${gameDir}/versions/${versionId}/natives`
+    const librariesDir = `${gameDir}/libraries`
+    
+    await ensureDir(nativesDir)
+    
+    const libs = versionJson.libraries || []
+    for (const lib of libs) {
+      if (lib.natives && lib.natives.linux && lib.downloads?.classifiers) {
+        const nativeKey = lib.natives.linux.replace('${arch}', 'aarch64')
+        const classifier = lib.downloads.classifiers[nativeKey]
+        if (classifier) {
+          const libPath = `${librariesDir}/${classifier.path}`
+          try {
+            fs.accessSync(libPath)
+            appendToTerminal(`  - 提取 natives: ${classifier.path}`)
+            const unzip = plus.android.newObject('java.util.zip.ZipFile', libPath)
+            const entries = plus.android.invoke(unzip, 'entries')
+            while (plus.android.invoke(entries, 'hasMoreElements')) {
+              const entry = plus.android.invoke(entries, 'nextElement')
+              const entryName = plus.android.invoke(entry, 'getName')
+              if (!lib.extract?.exclude?.includes(entryName)) {
+                const destPath = `${nativesDir}/${entryName}`
+                const destDir = destPath.substring(0, destPath.lastIndexOf('/'))
+                try { fs.accessSync(destDir) } catch { fs.mkdirSync({ dirPath: destDir, recursive: true }) }
+                const is = plus.android.invoke(unzip, 'getInputStream', entry)
+                const os = plus.android.newObject('java.io.FileOutputStream', destPath)
+                const buffer = plus.android.newObject('byte[1024]')
+                let len = 0
+                while ((len = plus.android.invoke(is, 'read', buffer)) != -1) {
+                  plus.android.invoke(os, 'write', buffer, 0, len)
+                }
+                plus.android.invoke(os, 'close')
+                plus.android.invoke(is, 'close')
+              }
+            }
+            plus.android.invoke(unzip, 'close')
+          } catch (e: any) {
+            appendToTerminal(`  - 跳过缺失的 natives: ${classifier.path}`)
+          }
+        }
+      }
+    }
+    appendToTerminal('✓ Natives 提取完成')
+  } catch (e: any) {
+    appendToTerminal(`[警告] Natives 提取失败: ${e.message}`)
+  }
+  // #endif
+}
+
+async function runCommandOnAndroid(cmd: string, versionJson: any, gameDir: string) {
   appendToTerminal(`> ${cmd}`)
   appendToTerminal('------------------------')
+  
+  await extractNatives(versionJson, gameDir)
   
   try {
     // 尝试通过 Cordova shell 插件执行
     const exec = (window as any).cordova?.plugins?.shell?.exec
     if (exec) {
-      return new Promise<void>((resolve, reject) => {
+      appendToTerminal('[信息] 使用 Cordova Shell 插件执行...')
+      return new Promise<void>((resolve) => {
         exec(cmd, (output: any, error: any) => {
           if (error) {
             appendToTerminal(`[错误] ${error}`)
-            reject(new Error(error))
-          } else {
+          } else if (output) {
             appendToTerminal(output)
-            resolve()
           }
+          appendToTerminal('[信息] 命令已发送')
+          resolve()
         })
       })
     }
     throw new Error('无 shell 执行插件')
   } catch (e: any) {
     try {
-      // 备用: 使用 plus.android 直接调用
-      const runtime = plus.android.runtimeMainActivity()
+      // 备用: 使用 plus.android 直接调用 (非阻塞方式)
+      appendToTerminal('[信息] 使用 plus.android API 执行...')
       const processBuilder = plus.android.newObject('java.lang.ProcessBuilder', ['sh', '-c', cmd])
       plus.android.invoke(processBuilder, 'redirectErrorStream', true)
+      
+      const env = plus.android.invoke(processBuilder, 'environment')
+      plus.android.invoke(env, 'put', 'LD_LIBRARY_PATH', `${gameDir}/versions/${versionJson.id}/natives`)
+      
       const process = plus.android.invoke(processBuilder, 'start')
+      appendToTerminal(`[信息] 游戏进程已启动 (PID: ${plus.android.invoke(process, 'pid')})`)
       
-      const reader = plus.android.newObject('java.io.BufferedReader', 
-        plus.android.newObject('java.io.InputStreamReader', 
-          plus.android.invoke(process, 'getInputStream')))
+      // 异步读取输出,不阻塞主进程
+      setTimeout(() => {
+        try {
+          const reader = plus.android.newObject('java.io.BufferedReader', 
+            plus.android.newObject('java.io.InputStreamReader', 
+              plus.android.invoke(process, 'getInputStream')))
+          
+          let line: string | null = ''
+          let lineCount = 0
+          const readLine = () => {
+            try {
+              if ((line = plus.android.invoke(reader, 'readLine')) !== null && lineCount < 200) {
+                appendToTerminal(line)
+                lineCount++
+                setTimeout(readLine, 100)
+              } else {
+                plus.android.invoke(reader, 'close')
+              }
+            } catch {
+              // 忽略读取错误
+            }
+          }
+          readLine()
+        } catch {
+          // 忽略读取错误
+        }
+      }, 500)
       
-      let line: string | null = ''
-      let lineCount = 0
-      while ((line = plus.android.invoke(reader, 'readLine')) !== null) {
-        appendToTerminal(line)
-        lineCount++
-        if (lineCount > 500) break // 防止输出过多
-      }
-      
-      const exitCode = plus.android.invoke(process, 'waitFor')
-      if (exitCode !== 0) {
-        appendToTerminal(`[进程退出] 代码: ${exitCode}`)
-      }
     } catch (e2: any) {
       appendToTerminal(`[无法执行] ${e2.message}`)
       appendToTerminal('')
@@ -190,9 +264,6 @@ async function startLaunch() {
     setStepStatus('java', 'done', { progress: 1, total: 1 })
     
     // ===== Step 3-4: 安装/检查依赖和资源 =====
-    appendToTerminal('[3/6] 检查依赖库...')
-    appendToTerminal('[4/6] 检查资源文件...')
-    appendToTerminal('')
     appendToTerminal('开始完整安装流程 (自动下载缺失的文件)...')
     appendToTerminal('')
     
@@ -248,15 +319,29 @@ async function startLaunch() {
     // ===== Step 5: 登录 =====
     setStepStatus('login', 'running')
     appendToTerminal('[5/6] 登录验证...')
-    
+
     const account = accountStore.selected
-    if (account && account.name) {
-      appendToTerminal(`  - 用户名: ${account.name}`)
+    if (account && account.username) {
+      appendToTerminal(`  - 用户名: ${account.username}`)
       appendToTerminal(`  - 类型: ${account.type === 'microsoft' ? '微软正版' : account.type === 'offline' ? '离线' : account.type}`)
+      // 微软账号: 启动前确保 token 仍有效, 必要时自动刷新
+      if (account.type === 'microsoft' && account.id) {
+        try {
+          appendToTerminal('  - 正在检查 token 有效性...')
+          const ok = await accountStore.ensureFreshToken(account.id)
+          if (ok) {
+            appendToTerminal('  - token 已就绪')
+          } else {
+            appendToTerminal('  - [警告] token 已过期且无法自动刷新, 启动后可能无法进入正版服务器')
+          }
+        } catch (e: any) {
+          appendToTerminal('  - [警告] token 刷新异常: ' + (e?.message || e))
+        }
+      }
     } else {
       appendToTerminal('  - 未登录,使用离线模式 (Steve)')
     }
-    
+
     setStepStatus('login', 'done', { progress: 1, total: 1 })
     
     // ===== Step 6: 启动游戏 =====
@@ -273,7 +358,7 @@ async function startLaunch() {
       appendToTerminal('使用简化参数启动')
     }
     
-    const username = account?.name || 'Steve'
+    const username = account?.username || 'Steve'
     const uuid = account?.uuid || '00000000-0000-0000-0000-000000000000'
     const accessToken = (account as any)?.accessToken || '0'
     
@@ -318,12 +403,12 @@ async function startLaunch() {
       
       // #ifdef APP-PLUS
       showTerminal.value = true
-      await runCommandOnAndroid(launchCmd)
+      await runCommandOnAndroid(launchCmd, versionJson, gameDir)
       // #endif
       
-      // #ifdef H5
+      // #ifndef APP-PLUS
       appendToTerminal('')
-      appendToTerminal('⚠️  浏览器环境无法直接执行 Java 命令')
+      appendToTerminal('⚠️  当前环境无法直接执行 Java 命令')
       appendToTerminal('请安装 Android APK 或 Windows 桌面版')
       appendToTerminal('')
       appendToTerminal('所有游戏文件已保存到:')

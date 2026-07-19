@@ -151,6 +151,17 @@ function ignoreUpdate() {
   showUpdateModal.value = false
 }
 
+function onToggleSnapshots(e: any) {
+  const val = !!e?.detail?.value
+  settingsStore.update({ showSnapshots: val })
+  if (val) versionStore.loadManifest()
+}
+
+function onToggleAutoUpdate(e: any) {
+  const val = !!e?.detail?.value
+  settingsStore.update({ autoCheckUpdate: val })
+}
+
 async function doCheckUpdate() {
   if (!settingsStore.autoCheckUpdate) return
   const update = await checkUpdate()
@@ -361,7 +372,7 @@ onMounted(() => {
                   <view class="setting-item__main">
                     <text class="setting-item__label">显示快照版本</text>
                   </view>
-                  <switch :checked="settingsStore.showSnapshots" color="#ff8fab" style="transform: scale(0.7)" />
+                  <switch :checked="settingsStore.showSnapshots" color="#ff8fab" style="transform: scale(0.7)" @change="onToggleSnapshots" />
                 </view>
               </view>
             </view>
@@ -407,7 +418,7 @@ onMounted(() => {
                   <view class="setting-item__main">
                     <text class="setting-item__label">自动检查更新</text>
                   </view>
-                  <switch :checked="settingsStore.autoCheckUpdate" color="#ff8fab" style="transform: scale(0.7)" />
+                  <switch :checked="settingsStore.autoCheckUpdate" color="#ff8fab" style="transform: scale(0.7)" @change="onToggleAutoUpdate" />
                 </view>
                 <view class="setting-item" @tap="openSettings">
                   <view class="setting-item__icon">📁</view>

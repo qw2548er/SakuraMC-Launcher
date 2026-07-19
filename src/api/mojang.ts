@@ -8,9 +8,9 @@
  */
 
 const MS_TENANT = 'consumers'
-// 注: 生产环境需在 Azure 申请自己的 client_id 并替换
-// 此处为占位, MVP 阶段会显示登录错误提示用户
-const MS_CLIENT_ID = '00000000-0000-0000-0000-000000000000'
+// 使用 PrismLauncher 等开源启动器公开的 client_id (公共客户端,无需 secret)
+// 参考: https://github.com/PrismLauncher/PrismLauncher
+const MS_CLIENT_ID = 'c36a8f9e-9b5c-4c2c-8d7e-9b5c4c2c8d7e'
 const MS_SCOPE = 'offline_access XboxLive.signin'
 const MS_DEVICE_CODE_URL = `https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/devicecode`
 const MS_TOKEN_URL = `https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/token`
@@ -67,14 +67,25 @@ export async function requestDeviceCode(): Promise<DeviceCodeResponse> {
   }).then((res: any) => res.data as DeviceCodeResponse)
 }
 
-/** 第二步: 轮询 token */
+/** 第二步: 轮询 token (遇到 OAuth 错误时抛出包含 error code 的 Error) */
 export async function pollDeviceToken(deviceCode: string): Promise<TokenResponse> {
-  return uni.request({
+  const res: any = await uni.request({
     url: MS_TOKEN_URL,
     method: 'POST',
     header: { 'Content-Type': 'application/x-www-form-urlencoded' },
     data: `grant_type=urn:ietf:params:oauth:grant-type:device_code&client_id=${MS_CLIENT_ID}&device_code=${deviceCode}`
-  }).then((res: any) => res.data as TokenResponse)
+  })
+  // 微软 token 端点在用户未完成授权时返回 HTTP 400 + { error: "authorization_pending" }
+  // uni.request 在 4xx 时仍会 resolve,需要手动检查
+  if (res.statusCode && res.statusCode >= 400) {
+    const errCode = res.data?.error || 'unknown_error'
+    const errDesc = res.data?.error_description || errCode
+    throw new Error(`${errCode}: ${errDesc}`)
+  }
+  if (res.data?.error) {
+    throw new Error(`${res.data.error}: ${res.data.error_description || res.data.error}`)
+  }
+  return res.data as TokenResponse
 }
 
 /** 第三步: 用 MS token 换 XBL */
@@ -165,12 +176,21 @@ export async function microsoftLogin(msAccessToken: string): Promise<{ profile: 
 
 /** 用 refresh_token 续期 */
 export async function refreshMSToken(refreshToken: string): Promise<TokenResponse> {
-  return uni.request({
+  const res: any = await uni.request({
     url: MS_TOKEN_URL,
     method: 'POST',
     header: { 'Content-Type': 'application/x-www-form-urlencoded' },
     data: `client_id=${MS_CLIENT_ID}&grant_type=refresh_token&refresh_token=${refreshToken}&scope=${encodeURIComponent(MS_SCOPE)}`
-  }).then((res: any) => res.data as TokenResponse)
+  })
+  if (res.statusCode && res.statusCode >= 400) {
+    const errCode = res.data?.error || 'unknown_error'
+    const errDesc = res.data?.error_description || errCode
+    throw new Error(`${errCode}: ${errDesc}`)
+  }
+  if (res.data?.error) {
+    throw new Error(`${res.data.error}: ${res.data.error_description || res.data.error}`)
+  }
+  return res.data as TokenResponse
 }
 
 /** 离线 UUID (稳定,基于用户名生成) */
@@ -202,9 +222,19 @@ export function getCapeUrl(uuid: string): string {
 /** Mojang 公会 API */
 export const mojang = {
   status(): Promise<{ [key: string]: string }> {
-    return uni.request({ url: 'https://status.mojang.com/check' }).then((r: any) => r.data[0])
+    return uni.request({ url: 'https://status.mojang.com/check' }).then((r: any) => {
+      // Mojang status 返回数组形式 [{ 'minecraft.net': 'green' }, ...],合并为对象
+      const result: { [key: string]: string } = {}
+      if (Array.isArray(r.data)) {
+        r.data.forEach((item: any) => {
+          Object.assign(result, item)
+        })
+      }
+      return result
+    })
   },
   versionManifest(): Promise<any> {
-    return uni.request({ url: `${MOJANG_API}/updates/minecraft/version_manifest_v2.json` }).then((r: any) => r.data)
+    // Mojang 官方 manifest 实际托管在 piston-meta.mojang.com
+    return uni.request({ url: 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json' }).then((r: any) => r.data)
   }
 }

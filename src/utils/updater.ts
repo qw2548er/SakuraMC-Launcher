@@ -19,7 +19,7 @@ function compareVersion(v1: string, v2: string): number {
 
 export function getPlatform(): 'h5' | 'android' | 'ios' | 'windows' | 'macos' | 'linux' | 'unknown' {
   // #ifdef H5
-  const ua = navigator.userAgent.toLowerCase()
+  const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase()
   if (ua.includes('android')) return 'android'
   if (ua.includes('iphone') || ua.includes('ipad')) return 'ios'
   if (ua.includes('windows')) return 'windows'
@@ -28,15 +28,18 @@ export function getPlatform(): 'h5' | 'android' | 'ios' | 'windows' | 'macos' | 
   return 'h5'
   // #endif
   // #ifdef APP-PLUS
-  // #ifdef APP-PLUS-ANDROID
+  // APP-PLUS-ANDROID / APP-PLUS-IOS 不是 uni-app 标准条件编译指令
+  // 改用 uni.getSystemInfoSync() 在运行时判断平台
+  try {
+    const info = uni.getSystemInfoSync()
+    if (info.platform === 'ios') return 'ios'
+    if (info.platform === 'android') return 'android'
+  } catch (e) { /* 忽略 */ }
   return 'android'
   // #endif
-  // #ifdef APP-PLUS-IOS
-  return 'ios'
-  // #endif
-  return 'android'
-  // #endif
+  // #ifndef H5 || APP-PLUS
   return 'unknown'
+  // #endif
 }
 
 export function getPlatformAsset(assets: { name: string; browser_download_url: string; size: number }[]) {

@@ -1,18 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { useAccountStore } from '@/stores/account'
-import { useFrpStore } from '@/stores/frp'
 import { useVersionStore } from '@/stores/version'
 import { useJavaStore } from '@/stores/java'
 import { APP_VERSION } from '@/utils/updater'
 import { detectPlatform, formatBytes } from '@/utils/format'
 import { getDefaultGameDir, getDefaultLauncherDir } from '@/utils/path'
-import { recommendJavaVersion } from '@/utils/java'
+import { recommendJavaVersion, detectSystemJava } from '@/utils/java'
+import { deleteFile, ensureDir, MINECRAFT_DIR, LAUNCHER_CACHE_DIR } from '@/utils/setup'
 
 const settingsStore = useSettingsStore()
-const accountStore = useAccountStore()
-const frpStore = useFrpStore()
 const versionStore = useVersionStore()
 const javaStore = useJavaStore()
 
@@ -24,6 +21,104 @@ const tabs = [
   { id: 'auto', label: '自动安装', icon: '🔧' },
   { id: 'custom', label: '自定义', icon: '⚙️' }
 ]
+
+// 下载源 picker
+const sourceOptions = [
+  { label: 'Mojang 官方', value: 'mojang' },
+  { label: 'BMCL 镜像', value: 'bmcl' },
+  { label: 'MCBBS 镜像', value: 'mcbbs' }
+]
+const sourceIndex = computed(() => sourceOptions.findIndex(o => o.value === settingsStore.downloadSource))
+
+function onSourceChange(e: any) {
+  const idx = e?.detail?.value
+  if (typeof idx === 'number' && sourceOptions[idx]) {
+    const v = sourceOptions[idx].value as 'mojang' | 'bmcl' | 'mcbbs'
+    settingsStore.update({ downloadSource: v })
+    versionStore.clearManifest()
+    uni.showToast({ title: '已切换为 ' + sourceOptions[idx].label, icon: 'success' })
+  }
+}
+
+// 主题 picker
+const themeOptions = [
+  { label: '跟随系统', value: 'auto' },
+  { label: '樱花粉 (深色)', value: 'dark' },
+  { label: '樱花粉 (浅色)', value: 'light' }
+]
+const themeIndex = computed(() => themeOptions.findIndex(o => o.value === settingsStore.theme))
+
+function onThemeChange(e: any) {
+  const idx = e?.detail?.value
+  if (typeof idx === 'number' && themeOptions[idx]) {
+    settingsStore.update({ theme: themeOptions[idx].value as 'dark' | 'light' | 'auto' })
+    uni.showToast({ title: '主题已切换', icon: 'success' })
+  }
+}
+
+// 语言 picker
+const langOptions = [
+  { label: '简体中文', value: 'zh-CN' },
+  { label: '繁體中文', value: 'zh-TW' },
+  { label: 'English', value: 'en-US' }
+]
+const langIndex = computed(() => langOptions.findIndex(o => o.value === settingsStore.language))
+
+function onLangChange(e: any) {
+  const idx = e?.detail?.value
+  if (typeof idx === 'number' && langOptions[idx]) {
+    settingsStore.update({ language: langOptions[idx].value as 'zh-CN' | 'zh-TW' | 'en-US' })
+    uni.showToast({ title: '语言已切换', icon: 'success' })
+  }
+}
+
+// 窗口大小
+const showWindowModal = ref(false)
+const winWidth = ref(settingsStore.windowWidth)
+const winHeight = ref(settingsStore.windowHeight)
+
+function openWindowModal() {
+  winWidth.value = settingsStore.windowWidth
+  winHeight.value = settingsStore.windowHeight
+  showWindowModal.value = true
+}
+
+function saveWindowSize() {
+  const w = Math.max(640, Math.round(winWidth.value))
+  const h = Math.max(480, Math.round(winHeight.value))
+  settingsStore.update({ windowWidth: w, windowHeight: h })
+  showWindowModal.value = false
+  uni.showToast({ title: '已保存', icon: 'success' })
+}
+
+// 自定义参数
+const showJvmModal = ref(false)
+const jvmArgsDraft = ref('')
+
+function openJvmModal() {
+  jvmArgsDraft.value = settingsStore.customJvmArgs
+  showJvmModal.value = true
+}
+
+function saveJvmArgs() {
+  settingsStore.update({ customJvmArgs: jvmArgsDraft.value })
+  showJvmModal.value = false
+  uni.showToast({ title: '已保存', icon: 'success' })
+}
+
+const showGameArgsModal = ref(false)
+const gameArgsDraft = ref('')
+
+function openGameArgsModal() {
+  gameArgsDraft.value = settingsStore.customGameArgs
+  showGameArgsModal.value = true
+}
+
+function saveGameArgs() {
+  settingsStore.update({ customGameArgs: gameArgsDraft.value })
+  showGameArgsModal.value = false
+  uni.showToast({ title: '已保存', icon: 'success' })
+}
 
 const platform = computed(() => detectPlatform())
 const defaultGameDir = computed(() => getDefaultGameDir())
@@ -77,7 +172,16 @@ function savePathConfig() {
 function openFolder(path: string) {
   // #ifdef APP-PLUS
   try {
-    plus.io.openFile(path)
+    // plus.io 没有 openFile 方法,使用 plus.runtime.openFile 打开文件
+    // 对于目录,复制路径到剪贴板让用户在文件管理器中打开
+    if (path) {
+      uni.setClipboardData({
+        data: path,
+        success: () => {
+          uni.showToast({ title: '路径已复制,可在文件管理器中粘贴打开', icon: 'none', duration: 2500 })
+        }
+      })
+    }
   } catch (e: any) {
     uni.showToast({ title: '无法打开该路径', icon: 'none' })
   }
@@ -89,15 +193,30 @@ function openFolder(path: string) {
 
 const totalMemory = computed(() => {
   // #ifdef APP-PLUS
-  return plus.device.memory * 1024 || 4096
+  try {
+    // plus.device.memory 不存在,使用 uni.getSystemInfoSync 获取设备内存
+    const info = uni.getSystemInfoSync()
+    // 部分平台提供 totalMemory 字段 (单位 MB)
+    if ((info as any).memorySize) {
+      // memorySize 可能是字节,转换为 MB
+      const mem = (info as any).memorySize
+      return mem > 1024 * 1024 ? Math.floor(mem / (1024 * 1024)) : Math.floor(mem)
+    }
+    // 根据设备型号推断内存 (保守值)
+    const model = (info.model || '').toLowerCase()
+    if (model.includes('phone')) return 6144  // 手机默认 6GB
+    if (model.includes('pad')) return 8192    // 平板默认 8GB
+    return 6144
+  } catch (e) {
+    return 4096
+  }
   // #endif
-  // #ifdef H5
-  const ua = navigator.userAgent
+  // #ifndef APP-PLUS
+  // H5 等环境根据平台推断
   if (platform.value === 'windows') return 8192
   if (platform.value === 'android') return 4096
   return 8192
   // #endif
-  return 8192
 })
 
 function openGameDirModal() {
@@ -145,16 +264,14 @@ function onMemSliderChange(e: any) {
 function saveMemory() {
   if (memMin.value < 256) memMin.value = 256
   if (memMax.value < memMin.value + 256) memMax.value = memMin.value + 256
+  // 不超过系统总内存
+  const total = totalMemory.value
+  if (memMax.value > total) memMax.value = total
+  if (memMin.value > memMax.value - 256) memMin.value = Math.max(256, memMax.value - 256)
   settingsStore.update({ minMemory: memMin.value, maxMemory: memMax.value })
   showMemoryModal.value = false
   uni.showToast({ title: '已保存', icon: 'success' })
 }
-
-const sourceOptions = [
-  { label: 'Mojang 官方', value: 'mojang' },
-  { label: 'BMCL 镜像', value: 'bmcl' },
-  { label: 'MCBBS 镜像', value: 'mcbbs' }
-]
 
 function openVersions() {
   uni.navigateTo({ url: '/pages/versions/versions' })
@@ -164,13 +281,40 @@ function openDownload() {
   uni.navigateTo({ url: '/pages/download/download' })
 }
 
-function clearCache() {
+async function clearCache() {
   uni.showModal({
     title: '清除缓存',
     content: '将删除下载缓存和临时文件，不会删除游戏存档和配置',
-    success: r => {
-      if (r.confirm) {
-        uni.showToast({ title: '已清除', icon: 'success' })
+    success: async r => {
+      if (!r.confirm) return
+      uni.showLoading({ title: '清除中...' })
+      try {
+        // #ifdef APP-PLUS
+        // 清除下载缓存目录
+        try {
+          await deleteFile(LAUNCHER_CACHE_DIR, true)
+          await ensureDir(LAUNCHER_CACHE_DIR)
+        } catch (e) { /* 目录可能不存在, 忽略 */ }
+        // 清除 assets 下载缓存 (保留 assets 本体, 仅清临时)
+        try {
+          await deleteFile(`${MINECRAFT_DIR}/assets/temp`, true)
+        } catch (e) { /* ignore */ }
+        // 清除 uni 自带缓存
+        try {
+          // @ts-ignore
+          if (uni.clearStorageSync) uni.clearStorageSync()
+        } catch (e) { /* ignore */ }
+        uni.hideLoading()
+        uni.showToast({ title: '缓存已清除', icon: 'success' })
+        // #endif
+        // #ifndef APP-PLUS
+        uni.clearStorageSync()
+        uni.hideLoading()
+        uni.showToast({ title: '本地存储已清除', icon: 'success' })
+        // #endif
+      } catch (e: any) {
+        uni.hideLoading()
+        uni.showToast({ title: '清除失败: ' + (e?.message || ''), icon: 'none' })
       }
     }
   })
@@ -181,17 +325,69 @@ function clearAll() {
     title: '清除全部数据',
     content: '将删除所有本地数据，包括账号、配置、下载记录，不可恢复！',
     confirmColor: '#f87171',
-    success: r => {
-      if (r.confirm) {
+    success: async r => {
+      if (!r.confirm) return
+      uni.showLoading({ title: '清除中...' })
+      try {
+        // 先清 storage
         try {
           uni.clearStorageSync()
-          uni.showToast({ title: '已清除, 请重启', icon: 'success' })
-        } catch (e) {
-          uni.showToast({ title: '清除失败', icon: 'none' })
-        }
+        } catch (e) { /* ignore */ }
+        // #ifdef APP-PLUS
+        // 尝试删除游戏目录中的配置文件 (保留存档)
+        try {
+          // 清除 options.txt、servers.dat 等
+          const files = ['options.txt', 'servers.dat', 'config', 'launcher_profiles.json']
+          for (const f of files) {
+            try {
+              await deleteFile(`${MINECRAFT_DIR}/${f}`, true)
+            } catch { /* 不存在则跳过 */ }
+          }
+        } catch (e) { /* ignore */ }
+        // #endif
+        uni.hideLoading()
+        uni.showToast({ title: '已清除, 请重启', icon: 'success' })
+      } catch (e: any) {
+        uni.hideLoading()
+        uni.showToast({ title: '清除失败: ' + (e?.message || ''), icon: 'none' })
       }
     }
   })
+}
+
+// 自动检测系统 Java
+async function autoDetectJava() {
+  uni.showLoading({ title: '检测中...' })
+  try {
+    const javas = await detectSystemJava()
+    uni.hideLoading()
+    if (javas.length === 0) {
+      uni.showToast({ title: '未检测到 Java', icon: 'none' })
+      return
+    }
+    // 将检测到的 Java 加入 javaStore
+    let added = 0
+    for (const j of javas) {
+      const major = j.version || 0
+      const id = `sys-java${major}-${j.bit || 64}-${j.vendor || 'unknown'}`
+      if (!javaStore.versions.find(v => v.id === id)) {
+        javaStore.addVersion({
+          id,
+          name: `Java ${major} (系统)`,
+          version: `${major}`,
+          majorVersion: major,
+          path: j.path,
+          architecture: j.bit === 64 ? 'x64' : 'x86',
+          type: 'jre'
+        })
+        added++
+      }
+    }
+    uni.showToast({ title: `检测到 ${javas.length} 个, 新增 ${added} 个`, icon: 'success' })
+  } catch (e: any) {
+    uni.hideLoading()
+    uni.showToast({ title: '检测失败: ' + (e?.message || ''), icon: 'none' })
+  }
 }
 
 const recommendedJava = computed(() => {
@@ -199,8 +395,8 @@ const recommendedJava = computed(() => {
   return recommendJavaVersion(versionStore.selectedId)
 })
 
-function selectJavaVersion(ver: string) {
-  javaStore.selectVersion(ver)
+function selectJavaVersion(id: string) {
+  javaStore.selectVersion(id)
   settingsStore.update({ javaPath: javaStore.selectedVersion?.path || '' })
   uni.showToast({ title: '已切换', icon: 'success' })
 }
@@ -379,13 +575,16 @@ function selectJavaVersion(ver: string) {
         <view class="setting-section">
           <text class="setting-section__title">下载</text>
           
-          <view class="setting-item">
-            <view class="setting-item__icon">🌐</view>
-            <view class="setting-item__main">
-              <text class="setting-item__label">下载源</text>
-              <text class="setting-item__value">{{ sourceOptions.find(o => o.value === settingsStore.downloadSource)?.label }}</text>
+          <picker mode="selector" :range="sourceOptions" range-key="label" :value="sourceIndex" @change="onSourceChange">
+            <view class="setting-item">
+              <view class="setting-item__icon">🌐</view>
+              <view class="setting-item__main">
+                <text class="setting-item__label">下载源</text>
+                <text class="setting-item__value">{{ sourceOptions[sourceIndex]?.label || sourceOptions[0].label }}</text>
+              </view>
+              <text class="setting-item__arrow">›</text>
             </view>
-          </view>
+          </picker>
           
           <view class="setting-item" @tap="clearCache">
             <view class="setting-item__icon">🗑️</view>
@@ -408,6 +607,11 @@ function selectJavaVersion(ver: string) {
               <text class="setting-item__label">自动安装 Forge</text>
               <text class="setting-item__value">安装版本后自动安装 Forge</text>
             </view>
+            <switch
+              :checked="settingsStore.autoInstallForge"
+              color="#ff8fab"
+              @change="settingsStore.update({ autoInstallForge: $event.detail.value })"
+            />
           </view>
           
           <view class="setting-item">
@@ -416,6 +620,11 @@ function selectJavaVersion(ver: string) {
               <text class="setting-item__label">自动安装 Fabric</text>
               <text class="setting-item__value">安装版本后自动安装 Fabric</text>
             </view>
+            <switch
+              :checked="settingsStore.autoInstallFabric"
+              color="#ff8fab"
+              @change="settingsStore.update({ autoInstallFabric: $event.detail.value })"
+            />
           </view>
           
           <view class="setting-item">
@@ -424,34 +633,59 @@ function selectJavaVersion(ver: string) {
               <text class="setting-item__label">自动安装 OptiFine</text>
               <text class="setting-item__value">安装版本后自动安装 OptiFine</text>
             </view>
+            <switch
+              :checked="settingsStore.autoInstallOptifine"
+              color="#ff8fab"
+              @change="settingsStore.update({ autoInstallOptifine: $event.detail.value })"
+            />
           </view>
         </view>
         
         <view class="setting-section">
-          <text class="setting-section__title">Mod 加载器</text>
+          <text class="setting-section__title">Java</text>
           
-          <view class="setting-item">
-            <view class="setting-item__icon">🔩</view>
+          <view class="setting-item" @tap="autoDetectJava">
+            <view class="setting-item__icon">🔍</view>
             <view class="setting-item__main">
-              <text class="setting-item__label">Forge</text>
-              <text class="setting-item__value">最流行的 Mod 加载器</text>
+              <text class="setting-item__label">扫描系统 Java</text>
+              <text class="setting-item__value">自动检测系统已安装的 Java</text>
             </view>
+            <text class="setting-item__arrow">›</text>
+          </view>
+        </view>
+        
+        <view class="setting-section">
+          <text class="setting-section__title">窗口</text>
+          
+          <view class="setting-item" @tap="openWindowModal">
+            <view class="setting-item__icon">🪟</view>
+            <view class="setting-item__main">
+              <text class="setting-item__label">窗口大小</text>
+              <text class="setting-item__value">{{ settingsStore.windowWidth }} × {{ settingsStore.windowHeight }}</text>
+            </view>
+            <text class="setting-item__arrow">›</text>
+          </view>
+        </view>
+        
+        <view class="setting-section">
+          <text class="setting-section__title">自定义参数</text>
+          
+          <view class="setting-item" @tap="openJvmModal">
+            <view class="setting-item__icon">⚙️</view>
+            <view class="setting-item__main">
+              <text class="setting-item__label">JVM 参数</text>
+              <text class="setting-item__value">{{ settingsStore.customJvmArgs || '无' }}</text>
+            </view>
+            <text class="setting-item__arrow">›</text>
           </view>
           
-          <view class="setting-item">
-            <view class="setting-item__icon">🧶</view>
+          <view class="setting-item" @tap="openGameArgsModal">
+            <view class="setting-item__icon">🎮</view>
             <view class="setting-item__main">
-              <text class="setting-item__label">Fabric</text>
-              <text class="setting-item__value">轻量级 Mod 加载器</text>
+              <text class="setting-item__label">游戏参数</text>
+              <text class="setting-item__value">{{ settingsStore.customGameArgs || '无' }}</text>
             </view>
-          </view>
-          
-          <view class="setting-item">
-            <view class="setting-item__icon">🪡</view>
-            <view class="setting-item__main">
-              <text class="setting-item__label">Quilt</text>
-              <text class="setting-item__value">Fabric 的分支版本</text>
-            </view>
+            <text class="setting-item__arrow">›</text>
           </view>
         </view>
       </view>
@@ -460,21 +694,27 @@ function selectJavaVersion(ver: string) {
         <view class="setting-section">
           <text class="setting-section__title">外观</text>
           
-          <view class="setting-item">
-            <view class="setting-item__icon">🎨</view>
-            <view class="setting-item__main">
-              <text class="setting-item__label">主题</text>
-              <text class="setting-item__value">樱花粉</text>
+          <picker mode="selector" :range="themeOptions" range-key="label" :value="themeIndex" @change="onThemeChange">
+            <view class="setting-item">
+              <view class="setting-item__icon">🎨</view>
+              <view class="setting-item__main">
+                <text class="setting-item__label">主题</text>
+                <text class="setting-item__value">{{ themeOptions[themeIndex]?.label || themeOptions[0].label }}</text>
+              </view>
+              <text class="setting-item__arrow">›</text>
             </view>
-          </view>
+          </picker>
           
-          <view class="setting-item">
-            <view class="setting-item__icon">🌐</view>
-            <view class="setting-item__main">
-              <text class="setting-item__label">语言</text>
-              <text class="setting-item__value">简体中文</text>
+          <picker mode="selector" :range="langOptions" range-key="label" :value="langIndex" @change="onLangChange">
+            <view class="setting-item">
+              <view class="setting-item__icon">🌐</view>
+              <view class="setting-item__main">
+                <text class="setting-item__label">语言</text>
+                <text class="setting-item__value">{{ langOptions[langIndex]?.label || langOptions[0].label }}</text>
+              </view>
+              <text class="setting-item__arrow">›</text>
             </view>
-          </view>
+          </picker>
         </view>
         
         <view class="setting-section">
@@ -579,12 +819,12 @@ function selectJavaVersion(ver: string) {
         
         <view class="java-versions">
           <text class="java-versions__title">内置 Java 版本</text>
-          <view 
-            v-for="java in javaStore.versions" 
-            :key="java.version"
+          <view
+            v-for="java in javaStore.versions"
+            :key="java.id"
             class="java-version-item"
-            :class="{ 'java-version-item--selected': settingsStore.javaPath === java.path }"
-            @tap="selectJavaVersion(java.version)"
+            :class="{ 'java-version-item--selected': javaStore.selectedId === java.id }"
+            @tap="selectJavaVersion(java.id)"
           >
             <text class="java-version-item__name">{{ java.name }}</text>
             <text class="java-version-item__ver">{{ java.version }}</text>
@@ -663,6 +903,102 @@ function selectJavaVersion(ver: string) {
             <text>取消</text>
           </view>
           <view class="modal-btn modal-btn--primary" @tap="savePathConfig">
+            <text>保存</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="showWindowModal" class="modal-mask" @tap="showWindowModal = false">
+      <view class="modal-panel" @tap.stop>
+        <text class="modal-panel__title">窗口大小</text>
+        <text class="modal-panel__desc">设置 Minecraft 启动窗口分辨率</text>
+
+        <view class="modal-field">
+          <text class="modal-field__label">宽度 (px)</text>
+          <input
+            class="modal-field__input"
+            type="number"
+            v-model="winWidth"
+            placeholder="例如 854"
+          />
+        </view>
+
+        <view class="modal-field">
+          <text class="modal-field__label">高度 (px)</text>
+          <input
+            class="modal-field__input"
+            type="number"
+            v-model="winHeight"
+            placeholder="例如 480"
+          />
+        </view>
+
+        <view class="modal-hint">
+          <text>最小 640×480</text>
+        </view>
+
+        <view class="modal-actions">
+          <view class="modal-btn modal-btn--ghost" @tap="showWindowModal = false">
+            <text>取消</text>
+          </view>
+          <view class="modal-btn modal-btn--primary" @tap="saveWindowSize">
+            <text>保存</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="showJvmModal" class="modal-mask" @tap="showJvmModal = false">
+      <view class="modal-panel" @tap.stop>
+        <text class="modal-panel__title">JVM 参数</text>
+        <text class="modal-panel__desc">自定义 Java 虚拟机启动参数</text>
+
+        <view class="modal-field">
+          <textarea
+            class="modal-field__textarea"
+            v-model="jvmArgsDraft"
+            placeholder="例如: -XX:+UseG1GC -Xss2M"
+          />
+        </view>
+
+        <view class="modal-hint">
+          <text>每行一个参数，留空使用默认值</text>
+        </view>
+
+        <view class="modal-actions">
+          <view class="modal-btn modal-btn--ghost" @tap="showJvmModal = false">
+            <text>取消</text>
+          </view>
+          <view class="modal-btn modal-btn--primary" @tap="saveJvmArgs">
+            <text>保存</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="showGameArgsModal" class="modal-mask" @tap="showGameArgsModal = false">
+      <view class="modal-panel" @tap.stop>
+        <text class="modal-panel__title">游戏参数</text>
+        <text class="modal-panel__desc">自定义 Minecraft 游戏启动参数</text>
+
+        <view class="modal-field">
+          <textarea
+            class="modal-field__textarea"
+            v-model="gameArgsDraft"
+            placeholder="例如: --fullscreen --version 1.21.1"
+          />
+        </view>
+
+        <view class="modal-hint">
+          <text>每行一个参数，留空使用默认值</text>
+        </view>
+
+        <view class="modal-actions">
+          <view class="modal-btn modal-btn--ghost" @tap="showGameArgsModal = false">
+            <text>取消</text>
+          </view>
+          <view class="modal-btn modal-btn--primary" @tap="saveGameArgs">
             <text>保存</text>
           </view>
         </view>
@@ -905,6 +1241,17 @@ function selectJavaVersion(ver: string) {
     border-radius: 12rpx;
     padding: 0 20rpx;
     font-size: 28rpx;
+    color: #fff;
+    box-sizing: border-box;
+  }
+
+  &__textarea {
+    width: 100%;
+    height: 180rpx;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 12rpx;
+    padding: 16rpx 20rpx;
+    font-size: 26rpx;
     color: #fff;
     box-sizing: border-box;
   }

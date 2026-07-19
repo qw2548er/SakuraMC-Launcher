@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, type Ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { listDirectory } from '@/utils/setup'
+import { MINECRAFT_DIR } from '@/utils/setup'
 
 const settingsStore = useSettingsStore()
 const activeTab = ref<'mods' | 'resourcepack' | 'shaderpack'>('mods')
@@ -49,9 +51,99 @@ const filteredShaderPacks = computed(() => {
   return shaderPacks.value.filter(s => s.name.toLowerCase().includes(q))
 })
 
-function toggleItem(list: any[], id: string) {
+function toggleItem(list: Ref<any[]>, id: string) {
   const item = list.value.find((i: any) => i.id === id)
   if (item) item.enabled = !item.enabled
+}
+
+async function loadMods() {
+  // #ifdef APP-PLUS
+  try {
+    const modsDir = settingsStore.modsDir || `${MINECRAFT_DIR}/mods`
+    const entries = await listDirectory(modsDir)
+    const jars = entries.filter(e => !e.isDir && /\.jar$/i.test(e.name))
+    if (jars.length > 0) {
+      modList.value = jars.map(e => ({
+        id: e.name,
+        name: e.name.replace(/\.jar$/i, ''),
+        version: parseModVersion(e.name),
+        type: guessModType(e.name),
+        enabled: !e.name.startsWith('.'),
+        size: e.size ? (e.size / 1024 / 1024).toFixed(1) + ' MB' : '未知',
+        mc: '通用'
+      }))
+    } else {
+      modList.value = []
+    }
+  } catch (e: any) {
+    console.warn('[Mods] 加载 mods 失败:', e?.message || e)
+    modList.value = []
+  }
+  // #endif
+}
+
+// 从文件名猜测 mod 类型
+function guessModType(name: string): 'fabric' | 'forge' | 'quilt' | 'optifine' | 'neoforge' | 'unknown' {
+  const n = name.toLowerCase()
+  if (n.includes('optifine')) return 'optifine'
+  if (n.includes('fabric')) return 'fabric'
+  if (n.includes('neoforge')) return 'neoforge'
+  if (n.includes('forge')) return 'forge'
+  if (n.includes('quilt')) return 'quilt'
+  return 'unknown'
+}
+
+// 从文件名尝试提取版本号 (例如 modname-1.2.3.jar -> 1.2.3)
+function parseModVersion(name: string): string {
+  const base = name.replace(/\.jar$/i, '')
+  const m = base.match(/[-_]?(\d+\.\d+(?:\.\d+)?(?:\.\w+)?)$/)
+  return m ? m[1] : '未知'
+}
+
+async function loadResourcePacks() {
+  // #ifdef APP-PLUS
+  try {
+    const dir = settingsStore.resourcepacksDir || `${MINECRAFT_DIR}/resourcepacks`
+    const entries = await listDirectory(dir)
+    const packs = entries.filter(e => !e.isDir && /\.(zip|rar)$/i.test(e.name))
+    resourcePacks.value = packs.map(e => ({
+      id: e.name,
+      name: e.name.replace(/\.(zip|rar)$/i, ''),
+      version: '通用',
+      enabled: !e.name.startsWith('.'),
+      size: e.size ? (e.size / 1024 / 1024).toFixed(1) + ' MB' : '未知',
+      desc: '资源包文件'
+    }))
+  } catch (e: any) {
+    console.warn('[Mods] 加载 resourcepacks 失败:', e?.message || e)
+    resourcePacks.value = []
+  }
+  // #endif
+}
+
+async function loadShaderPacks() {
+  // #ifdef APP-PLUS
+  try {
+    const dir = settingsStore.shaderpacksDir || `${MINECRAFT_DIR}/shaderpacks`
+    const entries = await listDirectory(dir)
+    const packs = entries.filter(e => !e.isDir && /\.(zip|rar)$/i.test(e.name))
+    shaderPacks.value = packs.map(e => ({
+      id: e.name,
+      name: e.name.replace(/\.(zip|rar)$/i, ''),
+      version: '通用',
+      enabled: !e.name.startsWith('.'),
+      size: e.size ? (e.size / 1024 / 1024).toFixed(1) + ' MB' : '未知',
+      desc: '光影包文件'
+    }))
+  } catch (e: any) {
+    console.warn('[Mods] 加载 shaderpacks 失败:', e?.message || e)
+    shaderPacks.value = []
+  }
+  // #endif
+}
+
+async function loadAll() {
+  await Promise.allSettled([loadMods(), loadResourcePacks(), loadShaderPacks()])
 }
 
 function addMod() {
@@ -59,16 +151,8 @@ function addMod() {
     title: '添加 Mod',
     content: '请将 Mod 文件放入游戏目录下的 mods 文件夹中',
     success: () => {
-      // 模拟添加
-      modList.value.push({
-        id: 'mod-' + Date.now(),
-        name: '新 Mod (' + new Date().toLocaleTimeString() + ')',
-        version: '1.0.0',
-        type: 'fabric',
-        enabled: true,
-        size: '0 MB',
-        mc: '1.21'
-      })
+      loadMods()
+      uni.showToast({ title: '已刷新列表', icon: 'success' })
     }
   })
 }
@@ -77,6 +161,10 @@ function addResourcePack() {
   uni.showModal({
     title: '添加资源包',
     content: '请将资源包文件放入 resourcepacks 文件夹中',
+    success: () => {
+      loadResourcePacks()
+      uni.showToast({ title: '已刷新列表', icon: 'success' })
+    }
   })
 }
 
@@ -84,13 +172,29 @@ function addShaderPack() {
   uni.showModal({
     title: '添加光影包',
     content: '请将光影包文件放入 shaderpacks 文件夹中',
+    success: () => {
+      loadShaderPacks()
+      uni.showToast({ title: '已刷新列表', icon: 'success' })
+    }
   })
 }
 
 function openFolder(folder: string) {
-  const path = (settingsStore as any)[folder + 'Dir'] || (settingsStore.gameDir ? settingsStore.gameDir + '/' + folder : '')
-  uni.showToast({ title: path ? '路径: ' + path : '请在设置中配置路径', icon: 'none' })
+  // 类型安全的字段映射
+  const dirMap: Record<string, 'modsDir' | 'resourcepacksDir' | 'shaderpacksDir'> = {
+    mods: 'modsDir',
+    resourcepacks: 'resourcepacksDir',
+    shaderpacks: 'shaderpacksDir'
+  }
+  const key = dirMap[folder]
+  const path = key ? settingsStore[key] : ''
+  const finalPath = path || (settingsStore.gameDir ? settingsStore.gameDir + '/' + folder : '')
+  uni.showToast({ title: finalPath ? '路径: ' + finalPath : '请在设置中配置路径', icon: 'none' })
 }
+
+onMounted(() => {
+  loadAll()
+})
 
 function getTypeLabel(type: string) {
   const map: Record<string, string> = { fabric: 'Fabric', forge: 'Forge', quilt: 'Quilt', optifine: 'OptiFine', neoforge: 'NeoForge' }

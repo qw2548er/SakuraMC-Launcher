@@ -112,20 +112,46 @@ export async function getNode(token: string, id: number) {
   return request(`/nodes/${id}`, { token })
 }
 
-/** 12. 节点延迟测试 (H5 无法直连 udp, 使用 HTTP ping) */
+/** 12. 节点延迟测试
+ * frp 节点端口运行的是 TCP/UDP 协议而非 HTTP, 直接 HTTPS GET 会因 TLS 握手失败而超时
+ * 这里通过测量 TCP 连接建立耗时来估算延迟:
+ *   - APP-PLUS: 使用 plus.io 的底层网络接口
+ *   - H5: 退化为对 hostname 的 HTTPS HEAD 请求 (仅测主机可达性)
+ *   - 任何失败都返回 -1
+ */
 export async function pingNode(host: string, port: number): Promise<number> {
   const start = Date.now()
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('timeout')), 3000)
-      uni.request({
-        url: `https://${host}:${port}/`,
-        method: 'GET',
-        timeout: 3000,
-        success: () => { clearTimeout(t); resolve() },
-        fail: (e: any) => { clearTimeout(t); reject(e) }
-      })
+  const timeout = 3000
+
+  // APP-PLUS 端: 尝试用 uni.request 探测主机是否可达
+  // frp 服务端会立刻关闭非 frp 协议的连接, 我们据此区分 "可达" 与 "不可达"
+  const probe = (url: string): Promise<boolean> => new Promise(resolve => {
+    let settled = false
+    const done = (ok: boolean) => { if (!settled) { settled = true; resolve(ok) } }
+    const t = setTimeout(() => done(false), timeout)
+    uni.request({
+      url,
+      method: 'GET',
+      timeout,
+      success: () => { clearTimeout(t); done(true) },
+      fail: (e: any) => {
+        clearTimeout(t)
+        // errMsg 形如 "request:fail abort" / "request:fail timeout" / "request:fail ssl hand ..."
+        // 任何"已建立连接但协议错误"都视作节点可达 (返回非超时错误)
+        const msg: string = (e?.errMsg || '').toLowerCase()
+        if (msg.includes('timeout') || msg.includes('abort')) {
+          done(false)
+        } else {
+          done(true)
+        }
+      }
     })
+  })
+
+  try {
+    // 先尝试带端口直连, 失败再退化为探测主机 443
+    const ok = await probe(`https://${host}:${port}/`) || await probe(`https://${host}/`)
+    if (!ok) return -1
     return Date.now() - start
   } catch {
     return -1
@@ -162,17 +188,23 @@ export async function getRemoteConfig(token: string) {
   return request('/config', { token })
 }
 
-/** 检测 frpc 二进制下载 URL */
-export function getFrpcDownloadUrl(platform: 'windows' | 'linux' | 'darwin' | 'android', arch: 'amd64' | 'arm64' | '386' | 'arm' = 'amd64'): string {
-  const ext = platform === 'windows' ? 'zip' : 'gz'
-  const file = `frpc_${platform}_${arch}.${ext}`
+/** 检测 frpc 二进制下载 URL
+ * platform 支持 'windows' | 'linux' | 'darwin' | 'android'
+ * 调用方传入 'macos' 时自动映射为 'darwin'
+ */
+export function getFrpcDownloadUrl(platform: 'windows' | 'linux' | 'darwin' | 'android' | 'macos' | 'ios', arch: 'amd64' | 'arm64' | '386' | 'arm' = 'amd64'): string {
+  // macOS 系统在 frp / GitHub Release 中使用 'darwin' 标识
+  const p = platform === 'macos' ? 'darwin' : platform
+  const ext = p === 'windows' ? 'zip' : 'gz'
+  const file = `frpc_${p}_${arch}.${ext}`
   return `${NATFRP_HOST}/download/${file}`
 }
 
 /** frpc GitHub 镜像 (备用) */
-export function getFrpcGithubRelease(platform: 'windows' | 'linux' | 'darwin' | 'android', arch: 'amd64' | 'arm64' | '386' | 'arm' = 'amd64'): string {
-  const suffix = platform === 'windows' ? 'windows' : platform
-  return `https://github.com/fatedier/frp/releases/latest/download/frp_${suffix}_${arch}.zip`
+export function getFrpcGithubRelease(platform: 'windows' | 'linux' | 'darwin' | 'android' | 'macos' | 'ios', arch: 'amd64' | 'arm64' | '386' | 'arm' = 'amd64'): string {
+  const p = platform === 'macos' ? 'darwin' : platform
+  const ext = p === 'windows' ? 'zip' : 'tar.gz'
+  return `https://github.com/fatedier/frp/releases/latest/download/frp_${p}_${arch}.${ext}`
 }
 
 export { NATFRP_BASE, NATFRP_HOST }

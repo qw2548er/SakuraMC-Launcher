@@ -54,6 +54,8 @@ interface State {
   downloads: IDownloadTask[]
   modLoaders: Record<string, IModLoader[]>
   loadingLoaders: Record<string, boolean>
+  /** 当前下载任务的 abort 句柄,按 versionId 索引 */
+  abortHandles: Record<string, { abort: () => void }>
 }
 
 export const useVersionStore = defineStore('version', {
@@ -65,7 +67,8 @@ export const useVersionStore = defineStore('version', {
     selectedId: null,
     downloads: [],
     modLoaders: {},
-    loadingLoaders: {}
+    loadingLoaders: {},
+    abortHandles: {}
   }),
   getters: {
     selected(state): IGameVersion | null {
@@ -107,6 +110,10 @@ export const useVersionStore = defineStore('version', {
     persistInstalled() {
       uni.setStorageSync(INSTALLED_KEY, JSON.stringify(this.installed))
       uni.setStorageSync('sakuram.versions.selected.v1', this.selectedId || '')
+    },
+    clearManifest() {
+      this.manifest = null
+      this.manifestError = null
     },
     async loadManifest(force = false) {
       if (this.manifest && !force) return
@@ -236,7 +243,7 @@ export const useVersionStore = defineStore('version', {
           total: client.size || 0
         })
         uni.showToast({ title: '开始下载 Minecraft ' + versionId, icon: 'none', duration: 2000 })
-        await downloadFile({
+        const downloadOpts: import('@/utils/downloader').DownloadOptions = {
           url: clientUrl,
           savePath: jarPath,
           timeout: 600000,
@@ -271,7 +278,12 @@ export const useVersionStore = defineStore('version', {
             this.updateDownload(task.id, { status: 'error', error: e.message })
             uni.showToast({ title: '下载失败: ' + e.message, icon: 'none', duration: 5000 })
           }
-        })
+        }
+        await downloadFile(downloadOpts)
+        // 保存 abort 句柄以便后续取消
+        if (downloadOpts._taskHandle) {
+          this.abortHandles[versionId] = downloadOpts._taskHandle
+        }
       } catch (e: any) {
         console.error('[Download] 版本下载异常:', e)
         this.updateDownload(task.id, { status: 'error', error: e.message })
@@ -323,6 +335,12 @@ export const useVersionStore = defineStore('version', {
     },
 
     async cancelDownload(versionId: string) {
+      // 调用 abort 真正取消底层网络请求
+      const handle = this.abortHandles[versionId]
+      if (handle) {
+        try { handle.abort() } catch (e) { /* 忽略 abort 错误 */ }
+        delete this.abortHandles[versionId]
+      }
       const tasks = this.downloads.filter(d => d.name.includes(versionId) && d.status === 'downloading')
       tasks.forEach(t => { t.status = 'error'; t.error = '已取消' })
       uni.showToast({ title: '已取消下载', icon: 'none' })

@@ -82,18 +82,19 @@ export const useFrpStore = defineStore('frp', {
       this.persist()
     },
     async refreshAll() {
-      if (!this.account) return
+      const acc = this.account
+      if (!acc) return
       this.loading = true
       this.error = null
       try {
         const [info, traffic, nodes, tunnels] = await Promise.allSettled([
-          nat.getUserInfo(this.account.token),
-          nat.getTraffic(this.account.token),
-          nat.getNodes(this.account.token),
-          nat.getTunnels(this.account.token)
+          nat.getUserInfo(acc.token),
+          nat.getTraffic(acc.token),
+          nat.getNodes(acc.token),
+          nat.getTunnels(acc.token)
         ])
         if (info.status === 'fulfilled') {
-          this.account.userInfo = info.value
+          acc.userInfo = info.value
         }
         if (traffic.status === 'fulfilled') {
           this.traffic = {
@@ -159,8 +160,20 @@ export const useFrpStore = defineStore('frp', {
       return result
     },
     async updateTunnel(id: number, data: Partial<IFrpTunnel>) {
-      if (!this.account) throw new Error('未登录')
-      await nat.updateTunnel(this.account.token, id, data as any)
+      const acc = this.account
+      if (!acc) throw new Error('未登录')
+      // 与 createTunnel 一致地做 camelCase → snake_case 字段映射
+      const payload: any = {}
+      if (data.name !== undefined) payload.name = data.name
+      if (data.type !== undefined) payload.type = data.type
+      if (data.node !== undefined) payload.node = data.node
+      if (data.localIp !== undefined) payload.local_ip = data.localIp
+      if (data.localPort !== undefined) payload.local_port = data.localPort
+      if (data.remotePort !== undefined) payload.remote_port = data.remotePort
+      if (data.domain !== undefined) payload.domain = data.domain
+      if (data.useCompression !== undefined) payload.use_compression = data.useCompression
+      if (data.useEncryption !== undefined) payload.use_encryption = data.useEncryption
+      await nat.updateTunnel(acc.token, id, payload)
       await this.refreshAll()
     },
     async deleteTunnel(id: number) {

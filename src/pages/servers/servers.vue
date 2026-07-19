@@ -18,7 +18,7 @@ function addServer() {
   }
   serverStore.add({
     name: newName.value.trim(),
-    address: newAddress.value.trim(),
+    host: newAddress.value.trim(),
     port: 25565
   })
   showAddModal.value = false
@@ -42,15 +42,20 @@ function removeServer(id: string) {
 }
 
 function selectServer(id: string) {
-  serverStore.select(id)
+  serverStore.setActive(id)
+  serverStore.persist()
   uni.showToast({ title: '已选择', icon: 'success' })
+}
+
+function goBack() {
+  uni.navigateBack()
 }
 </script>
 
 <template>
   <view class="servers">
     <view class="servers__header">
-      <text class="servers__back" @tap="uni.navigateBack()">‹</text>
+      <text class="servers__back" @tap="goBack">‹</text>
       <text class="servers__title">服务器管理</text>
       <view class="servers__add" @tap="showAddModal = true">
         <text>+</text>
@@ -65,17 +70,17 @@ function selectServer(id: string) {
       </view>
       
       <view class="servers__list">
-        <view 
-          v-for="srv in serverStore.servers" 
+        <view
+          v-for="srv in serverStore.servers"
           :key="srv.id"
           class="server-card"
-          :class="{ 'server-card--active': serverStore.selectedId === srv.id }"
+          :class="{ 'server-card--active': serverStore.activeServerId === srv.id }"
           @tap="selectServer(srv.id)"
         >
           <view class="server-card__icon">🖥️</view>
           <view class="server-card__main">
             <text class="server-card__name">{{ srv.name }}</text>
-            <text class="server-card__address">{{ srv.address }}:{{ srv.port }}</text>
+            <text class="server-card__address">{{ srv.host }}:{{ srv.port }}</text>
           </view>
           <view class="server-card__actions">
             <view class="server-card__delete" @tap.stop="removeServer(srv.id)">
