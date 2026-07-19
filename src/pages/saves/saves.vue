@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { listDirectory, deleteFile, MINECRAFT_DIR } from '@/utils/setup'
+import { listDirectory, deleteFile, MINECRAFT_DIR, ensureDir } from '@/utils/setup'
+import {
+  showOpenModeDialog,
+  chooseFile,
+  importFile,
+  unzip,
+  listZip
+} from '@/utils/file-chooser'
 
 const settingsStore = useSettingsStore()
 
@@ -170,8 +177,111 @@ function deleteSave(id: string) {
 }
 
 function openSavesFolder() {
-  const path = settingsStore.savesDir || (settingsStore.gameDir ? settingsStore.gameDir + '/saves' : '')
-  uni.showToast({ title: path ? '路径: ' + path : '请在设置中配置路径', icon: 'none' })
+  const path = settingsStore.savesDir || `${MINECRAFT_DIR}/saves`
+  // #ifdef APP-PLUS
+  showOpenModeDialog(path)
+  // #endif
+  // #ifndef APP-PLUS
+  uni.showToast({ title: '路径: ' + path, icon: 'none' })
+  // #endif
+}
+
+/** 导入存档 zip, 自动解压到 saves 目录 */
+async function importSave() {
+  // #ifdef APP-PLUS
+  try {
+    uni.showLoading({ title: '选择存档文件...', mask: true })
+    const uris = await chooseFile('application/zip', false)
+    if (uris.length === 0) {
+      uni.hideLoading()
+      return
+    }
+
+    const savesDir = settingsStore.savesDir || `${MINECRAFT_DIR}/saves`
+    await ensureDir(savesDir)
+
+    // 复制到临时位置
+    const tmpDir = `${savesDir}/.import-tmp`
+    await ensureDir(tmpDir)
+    uni.showLoading({ title: '复制文件...', mask: true })
+    const imported = await importFile(uris[0], tmpDir)
+
+    // 列出 zip 内容,推断存档名
+    uni.showLoading({ title: '分析存档...', mask: true })
+    const entries = await listZip(imported.path)
+
+    // 推断存档名: 优先用 zip 文件名, 去掉 .zip 后缀
+    let saveName = imported.name.replace(/\.zip$/i, '')
+    // 检测 zip 内是否有 level.dat (Minecraft 存档特征)
+    const hasLevelDat = entries.some(e => e.name.endsWith('level.dat'))
+    if (!hasLevelDat) {
+      uni.hideLoading()
+      uni.showModal({
+        title: '提示',
+        content: '此 zip 不像 Minecraft 存档 (未找到 level.dat)，是否仍要解压到 saves 目录？',
+        success: async (r) => {
+          if (r.confirm) {
+            await doExtractSave(imported.path, saveName, savesDir)
+          } else {
+            try { await deleteFile(imported.path) } catch {}
+          }
+        }
+      })
+      return
+    }
+
+    // 检查 zip 根目录是否就是存档目录 (包含 level.dat)
+    const rootHasLevel = entries.some(e =>
+      e.name === 'level.dat' || e.name.startsWith('level.dat')
+    )
+    if (rootHasLevel) {
+      // 直接解压到 saves/<saveName>/
+      await doExtractSave(imported.path, saveName, savesDir)
+    } else {
+      // 解压后保留原有目录结构
+      await doExtractSave(imported.path, saveName, savesDir, true)
+    }
+  } catch (e: any) {
+    uni.hideLoading()
+    if (e?.message !== 'User cancelled') {
+      uni.showToast({ title: '导入失败: ' + (e?.message || ''), icon: 'none' })
+    }
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  uni.showToast({ title: '仅手机端支持', icon: 'none' })
+  // #endif
+}
+
+async function doExtractSave(
+  zipPath: string,
+  saveName: string,
+  savesDir: string,
+  keepRoot: boolean = false
+) {
+  const safeName = saveName.replace(/[^A-Za-z0-9._\-\u4e00-\u9fa5]+/g, '_') || 'ImportedSave'
+  let destDir: string
+  if (keepRoot) {
+    // zip 内已有目录结构,直接解压到 saves/
+    destDir = savesDir
+  } else {
+    // level.dat 在根目录,需要解压到 saves/<saveName>/
+    destDir = `${savesDir}/${safeName}`
+    await ensureDir(destDir)
+  }
+  uni.showLoading({ title: '解压中...', mask: true })
+  try {
+    await unzip(zipPath, destDir)
+    uni.hideLoading()
+    uni.showToast({ title: `已导入 ${safeName}`, icon: 'success' })
+    loadSaves()
+  } catch (e: any) {
+    uni.hideLoading()
+    uni.showToast({ title: '解压失败: ' + (e?.message || ''), icon: 'none' })
+  } finally {
+    // 清理临时 zip
+    try { await deleteFile(zipPath) } catch {}
+  }
 }
 
 function batchBackup() {
@@ -201,6 +311,9 @@ onMounted(loadSaves)
       <text class="saves__back" @tap="uni.navigateBack()">‹</text>
       <text class="saves__title">存档管理</text>
       <view class="saves__actions">
+        <view class="saves__action-btn" @tap="importSave">
+          <text>📥</text>
+        </view>
         <view class="saves__action-btn" @tap="batchBackup">
           <text>💾</text>
         </view>

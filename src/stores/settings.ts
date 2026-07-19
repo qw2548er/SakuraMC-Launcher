@@ -37,7 +37,9 @@ const defaultSettings: ISettings = {
   windowWidth: 854,
   windowHeight: 480,
   serverAddress: '',
-  javaArgs: ''
+  javaArgs: '',
+  backgroundImagePath: '',
+  useCustomBackground: false
 }
 
 export const useSettingsStore = defineStore('settings', {

@@ -13,6 +13,7 @@ import McBadge from '@/components/mc-badge.vue'
 import GameIcon from '@/components/game-icon.vue'
 import UpdateModal from '@/components/update-modal.vue'
 import LaunchProgress from '@/components/launch-progress.vue'
+import OnboardingModal, { shouldShowOnboarding } from '@/components/onboarding-modal.vue'
 import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript } from '@/utils/launcher'
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
 import { checkUpdate } from '@/utils/updater'
@@ -32,6 +33,7 @@ const showLaunchProgress = ref(false)
 const showUpdateModal = ref(false)
 const latestUpdate = ref<IAppUpdate | null>(null)
 const showAnnouncement = ref(true)
+const showOnboarding = ref(false)
 
 const navItems = [
   { id: 'home', icon: '🏠', label: '首页' },
@@ -42,6 +44,7 @@ const navItems = [
   { id: 'frp', icon: '🌐', label: '穿透' },
   { id: 'controls', icon: '⌨️', label: '按键' },
   { id: 'files', icon: '📁', label: '文件' },
+  { id: 'downloads', icon: '📥', label: '下载' },
   { id: 'settings', icon: '⚙️', label: '设置' }
 ]
 
@@ -59,12 +62,17 @@ onShow(() => {
 })
 
 onMounted(() => {
-  // #ifdef APP-PLUS
-  // 延迟请求权限，避免启动页被弹窗打断
-  setTimeout(() => {
-    requestCorePermissions().catch(() => {})
-  }, 1200)
-  // #endif
+  // 首次启动引导 (优先于权限请求, 避免弹窗冲突)
+  if (shouldShowOnboarding()) {
+    showOnboarding.value = true
+  } else {
+    // #ifdef APP-PLUS
+    // 老用户: 延迟请求权限，避免启动页被弹窗打断
+    setTimeout(() => {
+      requestCorePermissions().catch(() => {})
+    }, 1200)
+    // #endif
+  }
 })
 
 const selectedVersion = computed(() => versionStore.selected)
@@ -102,6 +110,9 @@ function navigateTo(id: string) {
       break
     case 'files':
       uni.navigateTo({ url: '/pages/files/files' })
+      break
+    case 'downloads':
+      uni.navigateTo({ url: '/pages/downloads/downloads' })
       break
   }
 }
@@ -194,6 +205,7 @@ onMounted(() => {
   <view class="home">
     <UpdateModal v-model:show="showUpdateModal" :update="latestUpdate" @ignore="ignoreUpdate" />
     <LaunchProgress v-if="showLaunchProgress" @close="showLaunchProgress = false" />
+    <OnboardingModal v-if="showOnboarding" @close="showOnboarding = false" />
     
     <view class="home__bg">
       <view class="home__bg-image" />

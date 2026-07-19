@@ -12,7 +12,8 @@ import {
   type InstallStep 
 } from '@/utils/install'
 import { MINECRAFT_DIR, ensureDir } from '@/utils/setup'
-import { formatBytes } from '@/utils/format'
+import { formatBytes, copyText } from '@/utils/format'
+import { APP_VERSION } from '@/utils/updater'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -433,12 +434,50 @@ async function startLaunch() {
     if (currentStep) {
       setStepStatus(currentStep.id, 'error')
     }
-    appendToTerminal(`[错误] ${e.message}`)
+    const errMsg = e?.message || String(e) || '未知错误'
+    const errStack = e?.stack ? '\n\nStack:\n' + e.stack : ''
+    appendToTerminal(`[错误] ${errMsg}`)
+    if (errStack) appendToTerminal(errStack)
+    appendToTerminal(`[出错步骤] ${currentStep?.name || '未知'}`)
+    appendToTerminal(`[时间] ${new Date().toLocaleString()}`)
+    appendToTerminal('')
+    appendToTerminal('点击下方「复制日志」按钮可一键复制完整日志，便于反馈问题')
     commandStatus.value = 'error'
     showTerminal.value = true
-    uni.showToast({ title: '启动失败: ' + (e.message || ''), icon: 'none' })
+    // 显示详细错误弹窗, 而不是简单 toast
+    uni.showModal({
+      title: '启动失败',
+      content: `步骤: ${currentStep?.name || '未知'}\n错误: ${errMsg}\n\n点击「复制日志」可一键复制完整终端输出，便于反馈问题。`,
+      confirmText: '复制日志',
+      cancelText: '关闭',
+      success: (r) => {
+        if (r.confirm) copyLaunchLog()
+      }
+    })
   } finally {
     isLaunching.value = false
+  }
+}
+
+/** 复制完整启动日志到剪贴板 */
+async function copyLaunchLog() {
+  const header = `===== SakuraMC 启动日志 =====\n版本: v${APP_VERSION}\n时间: ${new Date().toLocaleString()}\n设备: ${getPlatform()}\n============================\n\n`
+  const log = header + terminalOutput.value
+  const ok = await copyText(log)
+  if (ok) {
+    uni.showToast({ title: '日志已复制到剪贴板', icon: 'success' })
+  } else {
+    uni.showToast({ title: '复制失败', icon: 'none' })
+  }
+}
+
+/** 获取平台信息 */
+function getPlatform(): string {
+  try {
+    const info = uni.getSystemInfoSync()
+    return `${info.platform} ${info.system || ''} ${info.model || ''}`.trim()
+  } catch {
+    return 'unknown'
   }
 }
 
@@ -511,6 +550,9 @@ onMounted(() => {
         
         <!-- 底部按钮 -->
         <view class="lp-actions">
+          <view class="lp-btn lp-btn--ghost" @tap="copyLaunchLog">
+            <text>📋 复制日志</text>
+          </view>
           <view class="lp-btn" @tap="emit('close')">
             <text>{{ commandStatus === 'done' ? '关闭' : commandStatus === 'error' ? '关闭' : '取消' }}</text>
           </view>
@@ -727,7 +769,16 @@ onMounted(() => {
   background: linear-gradient(135deg, #ffb7d5, #ff8fab);
   color: #fff;
   font-weight: 600;
-  
+
+  &--ghost {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+    flex: 0 0 auto;
+    padding: 0 24rpx;
+    min-width: 180rpx;
+  }
+
   &:active {
     opacity: 0.8;
   }

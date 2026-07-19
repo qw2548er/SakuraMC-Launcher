@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { listDirectory, deleteFile, MINECRAFT_DIR } from '@/utils/setup'
+import { showOpenModeDialog, getImageBase64, shareFile } from '@/utils/file-chooser'
 
 const settingsStore = useSettingsStore()
 
@@ -14,6 +15,12 @@ interface Screenshot {
   previewColor: string
   path: string
   sizeBytes: number
+  /** 缩略图 base64 (懒加载) */
+  thumb?: string
+  /** 是否正在加载缩略图 */
+  thumbLoading?: boolean
+  /** 全尺寸 base64 (预览时加载) */
+  fullBase64?: string
 }
 
 const screenshots = ref<Screenshot[]>([])
@@ -93,6 +100,45 @@ const totalSize = computed(() => {
 function openPreview(ss: Screenshot) {
   previewScreenshot.value = ss
   showPreview.value = true
+  // 异步加载全尺寸图片
+  if (!ss.fullBase64) {
+    loadFullImage(ss)
+  }
+}
+
+async function loadFullImage(ss: Screenshot) {
+  if (!previewScreenshot.value || previewScreenshot.value.id !== ss.id) return
+  try {
+    const data = await getImageBase64(ss.path, 1920, 1080)
+    if (data) {
+      // 更新当前预览对象
+      const target = screenshots.value.find(s => s.id === ss.id)
+      if (target) target.fullBase64 = data.base64
+      if (previewScreenshot.value?.id === ss.id) {
+        previewScreenshot.value = { ...previewScreenshot.value, fullBase64: data.base64 }
+      }
+    }
+  } catch (e: any) {
+    console.warn('[Screenshots] loadFullImage failed:', e?.message)
+  }
+}
+
+/** 懒加载缩略图 (滚动到可见时调用) */
+async function loadThumb(ss: Screenshot) {
+  if (ss.thumb || ss.thumbLoading) return
+  const target = screenshots.value.find(s => s.id === ss.id)
+  if (!target || target.thumb || target.thumbLoading) return
+  target.thumbLoading = true
+  try {
+    const data = await getImageBase64(ss.path, 200, 200)
+    if (data) {
+      target.thumb = data.base64
+    }
+  } catch (e: any) {
+    console.warn('[Screenshots] loadThumb failed:', ss.name, e?.message)
+  } finally {
+    target.thumbLoading = false
+  }
 }
 
 function closePreview() {
@@ -124,21 +170,41 @@ function deleteScreenshot(id: string) {
 }
 
 function openScreenshotsFolder() {
-  const path = settingsStore.screenshotsDir || (settingsStore.gameDir ? settingsStore.gameDir + '/screenshots' : '')
-  uni.showToast({ title: path ? '路径: ' + path : '请在设置中配置路径', icon: 'none' })
+  const path = settingsStore.screenshotsDir || `${MINECRAFT_DIR}/screenshots`
+  // #ifdef APP-PLUS
+  showOpenModeDialog(path)
+  // #endif
+  // #ifndef APP-PLUS
+  uni.showToast({ title: '路径: ' + path, icon: 'none' })
+  // #endif
 }
 
 function shareScreenshot(ss: Screenshot) {
+  // #ifdef APP-PLUS
+  shareFile(ss.path, '分享截图 ' + ss.name).then((ok) => {
+    if (!ok) {
+      uni.showToast({ title: '分享失败', icon: 'none' })
+    }
+  })
+  // #endif
+  // #ifndef APP-PLUS
   uni.setClipboardData({
     data: ss.name,
     showToast: true,
     success: () => uni.showToast({ title: ss.name + ' 已复制', icon: 'success' }),
     fail: () => uni.showToast({ title: '复制失败', icon: 'none' })
   })
+  // #endif
 }
 
 function refreshList() {
   loadScreenshots()
+}
+
+/** 滚动到底部时, 批量加载剩余缩略图 (前 20 个) */
+function loadMoreThumbs() {
+  const unloaded = filteredScreenshots.value.filter(s => !s.thumb && !s.thumbLoading).slice(0, 8)
+  unloaded.forEach(s => loadThumb(s))
 }
 
 onMounted(loadScreenshots)
@@ -178,14 +244,15 @@ onMounted(loadScreenshots)
     </view>
 
     <!-- 网格视图 -->
-    <scroll-view scroll-y class="screenshots__content" v-if="selectedView === 'grid'">
+    <scroll-view scroll-y class="screenshots__content" v-if="selectedView === 'grid'" @scrolltolower="loadMoreThumbs">
       <view class="screenshots__grid">
-        <view v-for="ss in filteredScreenshots" :key="ss.id" class="screenshot-card" @tap="openPreview(ss)">
-          <view class="screenshot-card__preview" :style="{ background: ss.previewColor }">
-            <text class="screenshot-card__placeholder">📷</text>
+        <view v-for="ss in filteredScreenshots" :key="ss.id" class="screenshot-card" @tap="openPreview(ss)" @appear="loadThumb(ss)">
+          <view class="screenshot-card__preview" :style="{ background: ss.thumb ? 'transparent' : ss.previewColor }">
+            <image v-if="ss.thumb" class="screenshot-card__img" :src="ss.thumb" mode="aspectFill" />
+            <text v-else class="screenshot-card__placeholder">{{ ss.thumbLoading ? '⏳' : '📷' }}</text>
           </view>
           <view class="screenshot-card__info">
-            <text class="screenshot-card__name">{{ ss.name.substring(0, 18) }}...</text>
+            <text class="screenshot-card__name">{{ ss.name.length > 18 ? ss.name.substring(0, 18) + '...' : ss.name }}</text>
             <text class="screenshot-card__meta">{{ ss.resolution }}</text>
           </view>
           <view class="screenshot-card__overlay" @tap.stop="deleteScreenshot(ss.id)">
@@ -202,9 +269,10 @@ onMounted(loadScreenshots)
 
     <!-- 列表视图 -->
     <scroll-view scroll-y class="screenshots__content" v-if="selectedView === 'list'">
-      <view v-for="ss in filteredScreenshots" :key="ss.id" class="screenshot-row" @tap="openPreview(ss)">
-        <view class="screenshot-row__preview" :style="{ background: ss.previewColor }">
-          <text>📷</text>
+      <view v-for="ss in filteredScreenshots" :key="ss.id" class="screenshot-row" @tap="openPreview(ss)" @appear="loadThumb(ss)">
+        <view class="screenshot-row__preview" :style="{ background: ss.thumb ? 'transparent' : ss.previewColor }">
+          <image v-if="ss.thumb" class="screenshot-row__img" :src="ss.thumb" mode="aspectFill" />
+          <text v-else>📷</text>
         </view>
         <view class="screenshot-row__main">
           <text class="screenshot-row__name">{{ ss.name }}</text>
@@ -212,7 +280,7 @@ onMounted(loadScreenshots)
         </view>
         <view class="screenshot-row__actions">
           <view class="screenshot-row__action" @tap.stop="shareScreenshot(ss)">
-            <text>📋</text>
+            <text>📤</text>
           </view>
           <view class="screenshot-row__action screenshot-row__action--danger" @tap.stop="deleteScreenshot(ss.id)">
             <text>🗑️</text>
@@ -229,9 +297,12 @@ onMounted(loadScreenshots)
     <!-- 预览弹窗 -->
     <view v-if="showPreview && previewScreenshot" class="screenshots__preview-overlay" @tap="closePreview">
       <view class="screenshots__preview-modal" @tap.stop>
-        <view class="screenshots__preview-image" :style="{ background: previewScreenshot.previewColor }">
-          <text class="screenshots__preview-icon">📷</text>
-          <text class="screenshots__preview-icon-text">{{ previewScreenshot.name }}</text>
+        <view class="screenshots__preview-image" :style="{ background: previewScreenshot.fullBase64 ? 'transparent' : previewScreenshot.previewColor }">
+          <image v-if="previewScreenshot.fullBase64" class="screenshots__preview-img" :src="previewScreenshot.fullBase64" mode="aspectFit" />
+          <template v-else>
+            <text class="screenshots__preview-icon">⏳</text>
+            <text class="screenshots__preview-icon-text">加载中... {{ previewScreenshot.name }}</text>
+          </template>
         </view>
         <view class="screenshots__preview-info">
           <text class="screenshots__preview-name">{{ previewScreenshot.name }}</text>
@@ -241,8 +312,8 @@ onMounted(loadScreenshots)
           <view class="screenshots__preview-btn" @tap="deleteScreenshot(previewScreenshot.id); closePreview()">
             <text>🗑️ 删除</text>
           </view>
-          <view class="screenshots__preview-btn" @tap="shareScreenshot(previewScreenshot); closePreview()">
-            <text>📋 复制名称</text>
+          <view class="screenshots__preview-btn" @tap="shareScreenshot(previewScreenshot)">
+            <text>📤 分享</text>
           </view>
           <view class="screenshots__preview-btn screenshots__preview-btn--close" @tap="closePreview">
             <text>关闭</text>
@@ -296,8 +367,9 @@ onMounted(loadScreenshots)
   }
   &__preview-image {
     height: 400rpx; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 16rpx;
+    gap: 16rpx; position: relative;
   }
+  &__preview-img { width: 100%; height: 100%; }
   &__preview-icon { font-size: 100rpx; }
   &__preview-icon-text { font-size: 24rpx; color: rgba(255,255,255,0.6); }
   &__preview-info { padding: 20rpx; }
@@ -315,7 +387,8 @@ onMounted(loadScreenshots)
   position: relative; border-radius: 12rpx; overflow: hidden;
   background: rgba(255,255,255,0.04); border: 2rpx solid rgba(255,255,255,0.04);
 
-  &__preview { height: 180rpx; display: flex; align-items: center; justify-content: center; }
+  &__preview { height: 180rpx; display: flex; align-items: center; justify-content: center; position: relative; }
+  &__img { width: 100%; height: 100%; }
   &__placeholder { font-size: 48rpx; }
   &__info { padding: 12rpx; }
   &__name { font-size: 22rpx; color: #fff; display: block; }
@@ -336,7 +409,9 @@ onMounted(loadScreenshots)
   &__preview {
     width: 72rpx; height: 72rpx; border-radius: 10rpx;
     display: flex; align-items: center; justify-content: center; font-size: 32rpx; flex-shrink: 0;
+    overflow: hidden; position: relative;
   }
+  &__img { width: 100%; height: 100%; }
   &__main { flex: 1; min-width: 0; }
   &__name { font-size: 26rpx; color: #fff; display: block; }
   &__meta { font-size: 22rpx; color: #888; display: block; margin-top: 2rpx; }

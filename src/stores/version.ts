@@ -4,6 +4,7 @@ import { uuid } from '@/utils/format'
 import * as bmcl from '@/api/bmcl'
 import { useSettingsStore } from './settings'
 import { downloadFile, ensureDirectory } from '@/utils/downloader'
+import { verifySha1 } from '@/utils/file-chooser'
 
 export async function saveJsonToFile(filePath: string, data: any): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -240,7 +241,8 @@ export const useVersionStore = defineStore('version', {
         console.log('[Download] 客户端下载地址:', clientUrl)
         this.updateDownload(task.id, {
           url: clientUrl,
-          total: client.size || 0
+          total: client.size || 0,
+          expectedSha1: client.sha1 || ''
         })
         uni.showToast({ title: '开始下载 Minecraft ' + versionId, icon: 'none', duration: 2000 })
         const downloadOpts: import('@/utils/downloader').DownloadOptions = {
@@ -254,11 +256,26 @@ export const useVersionStore = defineStore('version', {
           onSuccess: async (path) => {
             console.log('[Download] 下载完成,路径:', path)
             try {
+              // SHA1 完整性校验
+              const expectedSha1 = client.sha1
+              if (expectedSha1) {
+                this.updateDownload(task.id, { verifying: true })
+                // #ifdef APP-PLUS
+                const ok = await verifySha1(jarPath, expectedSha1)
+                this.updateDownload(task.id, { verifying: false })
+                if (!ok) {
+                  this.updateDownload(task.id, { status: 'error', error: 'SHA1 校验失败, 文件可能已损坏, 请重试' })
+                  uni.showToast({ title: '文件校验失败, 请重新下载', icon: 'none', duration: 5000 })
+                  return
+                }
+                console.log('[Download] SHA1 校验通过:', expectedSha1)
+                // #endif
+              }
               if (versionJson) {
                 await saveJsonToFile(jsonPath, versionJson)
                 console.log('[Download] 版本 JSON 已保存:', jsonPath)
               }
-              this.updateDownload(task.id, { status: 'completed', downloaded: client.size || 0, total: client.size || 0 })
+              this.updateDownload(task.id, { status: 'completed', downloaded: client.size || 0, total: client.size || 0, verified: !!expectedSha1 })
               this.markInstalled({
                 ...manifestVersion,
                 installed: true,
@@ -270,6 +287,7 @@ export const useVersionStore = defineStore('version', {
               uni.showToast({ title: 'Minecraft ' + versionId + ' 下载完成并自动选中', icon: 'success', duration: 3000 })
             } catch (e: any) {
               console.error('[Download] 保存版本 JSON 失败:', e)
+              this.updateDownload(task.id, { verifying: false, status: 'error', error: '保存配置失败: ' + (e?.message || '') })
               uni.showToast({ title: '下载完成,但保存配置失败', icon: 'none', duration: 3000 })
             }
           },
@@ -344,6 +362,61 @@ export const useVersionStore = defineStore('version', {
       const tasks = this.downloads.filter(d => d.name.includes(versionId) && d.status === 'downloading')
       tasks.forEach(t => { t.status = 'error'; t.error = '已取消' })
       uni.showToast({ title: '已取消下载', icon: 'none' })
+    },
+
+    /** 暂停下载 (按 task id) */
+    pauseDownload(taskId: string) {
+      const task = this.downloads.find(d => d.id === taskId)
+      if (!task || task.status !== 'downloading') return
+      // 调用 abort 句柄 (如果可用)
+      const versionId = task.name.replace('Minecraft ', '')
+      const handle = this.abortHandles[versionId]
+      if (handle) {
+        try { handle.abort() } catch (e) { /* 忽略 */ }
+        // 注意: 暂停时不删除 handle, 但实际下载任务已被中止
+        delete this.abortHandles[versionId]
+      }
+      task.status = 'paused'
+    },
+
+    /** 恢复下载 (重启任务) */
+    async resumeDownload(taskId: string) {
+      const task = this.downloads.find(d => d.id === taskId)
+      if (!task || task.status !== 'paused') return
+      const versionId = task.name.replace('Minecraft ', '')
+      // 重新触发下载流程
+      task.status = 'pending'
+      task.error = undefined
+      // 异步启动新下载任务 (复用 download 方法, 它会检查 isDownloading 状态)
+      try {
+        // 先把当前 paused 任务标记为 completed 避免被 isDownloading 拦截
+        task.status = 'completed'
+        await this.download(versionId)
+        // 移除原 paused 任务 (download 会创建新任务)
+        this.removeDownload(taskId)
+      } catch (e: any) {
+        task.status = 'error'
+        task.error = e?.message || '恢复失败'
+      }
+    },
+
+    /** 取消单个下载任务 (按 id) */
+    cancelTask(taskId: string) {
+      const task = this.downloads.find(d => d.id === taskId)
+      if (!task) return
+      const versionId = task.name.replace('Minecraft ', '')
+      const handle = this.abortHandles[versionId]
+      if (handle) {
+        try { handle.abort() } catch (e) { /* 忽略 */ }
+        delete this.abortHandles[versionId]
+      }
+      // 直接从列表中移除
+      this.removeDownload(taskId)
+    },
+
+    /** 清除所有失败/已取消的下载 */
+    clearFailedDownloads() {
+      this.downloads = this.downloads.filter(d => d.status !== 'error')
     },
 
     uninstall(id: string) {

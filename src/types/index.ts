@@ -145,6 +145,10 @@ export interface ISettings {
   windowHeight: number
   serverAddress: string
   javaArgs: string
+  // 启动器自定义背景图路径 (绝对路径)
+  backgroundImagePath?: string
+  // 是否使用自定义背景图
+  useCustomBackground?: boolean
 }
 
 export interface IAppUpdate {
@@ -171,4 +175,10 @@ export interface IDownloadTask {
   error?: string
   savePath?: string
   speed?: number
+  /** 是否正在校验 SHA1 */
+  verifying?: boolean
+  /** 是否已通过 SHA1 校验 */
+  verified?: boolean
+  /** 期望的 SHA1 (用于完整性校验) */
+  expectedSha1?: string
 }

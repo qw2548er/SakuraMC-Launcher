@@ -3,10 +3,68 @@ import { ref, computed, onMounted, type Ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { listDirectory } from '@/utils/setup'
 import { MINECRAFT_DIR } from '@/utils/setup'
+import { chooseAndImport, showOpenModeDialog } from '@/utils/file-chooser'
 
 const settingsStore = useSettingsStore()
 const activeTab = ref<'mods' | 'resourcepack' | 'shaderpack'>('mods')
 const search = ref('')
+const sortMode = ref(false)
+
+// 排序持久化 key 前缀
+const ORDER_KEY_PREFIX = 'sakuramc:order:'
+
+// 保存当前三个列表的顺序到本地
+function saveOrder() {
+  try {
+    uni.setStorageSync(ORDER_KEY_PREFIX + 'mods', modList.value.map((m: any) => m.id))
+    uni.setStorageSync(ORDER_KEY_PREFIX + 'resourcepacks', resourcePacks.value.map((r: any) => r.id))
+    uni.setStorageSync(ORDER_KEY_PREFIX + 'shaderpacks', shaderPacks.value.map((s: any) => s.id))
+  } catch (e) {
+    console.warn('[Mods] saveOrder failed:', e)
+  }
+}
+
+// 应用本地保存的顺序
+function applyOrder(list: Ref<any[]>, key: string) {
+  try {
+    const saved = uni.getStorageSync(ORDER_KEY_PREFIX + key)
+    if (!Array.isArray(saved) || saved.length === 0) return
+    const idToItem = new Map<string, any>()
+    list.value.forEach((item: any) => idToItem.set(item.id, item))
+    const ordered: any[] = []
+    saved.forEach((id: string) => {
+      const item = idToItem.get(id)
+      if (item) {
+        ordered.push(item)
+        idToItem.delete(id)
+      }
+    })
+    // 新增项追加到末尾
+    idToItem.forEach(item => ordered.push(item))
+    list.value = ordered
+  } catch (e) {
+    console.warn('[Mods] applyOrder failed:', e)
+  }
+}
+
+// 切换排序模式
+function toggleSortMode() {
+  sortMode.value = !sortMode.value
+  if (sortMode.value && search.value) search.value = ''
+}
+
+// 在过滤后的视图中, 通过 idx 上移/下移 (映射回原 list)
+function moveItemByIndex(list: Ref<any[]>, filtered: any[], filteredIdx: number, direction: -1 | 1) {
+  const item = filtered[filteredIdx]
+  if (!item) return
+  const realIdx = list.value.findIndex((i: any) => i.id === item.id)
+  if (realIdx === -1) return
+  const newIdx = realIdx + direction
+  if (newIdx < 0 || newIdx >= list.value.length) return
+  const arr = list.value
+  ;[arr[realIdx], arr[newIdx]] = [arr[newIdx], arr[realIdx]]
+  saveOrder()
+}
 
 // Mod 数据
 const modList = ref([
@@ -75,6 +133,7 @@ async function loadMods() {
     } else {
       modList.value = []
     }
+    applyOrder(modList, 'mods')
   } catch (e: any) {
     console.warn('[Mods] 加载 mods 失败:', e?.message || e)
     modList.value = []
@@ -114,6 +173,7 @@ async function loadResourcePacks() {
       size: e.size ? (e.size / 1024 / 1024).toFixed(1) + ' MB' : '未知',
       desc: '资源包文件'
     }))
+    applyOrder(resourcePacks, 'resourcepacks')
   } catch (e: any) {
     console.warn('[Mods] 加载 resourcepacks 失败:', e?.message || e)
     resourcePacks.value = []
@@ -135,6 +195,7 @@ async function loadShaderPacks() {
       size: e.size ? (e.size / 1024 / 1024).toFixed(1) + ' MB' : '未知',
       desc: '光影包文件'
     }))
+    applyOrder(shaderPacks, 'shaderpacks')
   } catch (e: any) {
     console.warn('[Mods] 加载 shaderpacks 失败:', e?.message || e)
     shaderPacks.value = []
@@ -147,40 +208,99 @@ async function loadAll() {
 }
 
 function addMod() {
-  uni.showModal({
-    title: '添加 Mod',
-    content: '请将 Mod 文件放入游戏目录下的 mods 文件夹中',
-    success: () => {
-      loadMods()
-      uni.showToast({ title: '已刷新列表', icon: 'success' })
+  uni.showActionSheet({
+    itemList: ['从文件导入 (.jar)', '用管理器打开目录'],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        importMods()
+      } else if (res.tapIndex === 1) {
+        openFolder('mods')
+      }
     }
   })
+}
+
+async function importMods() {
+  try {
+    const modsDir = settingsStore.modsDir || `${MINECRAFT_DIR}/mods`
+    uni.showLoading({ title: '选择文件...' })
+    const imported = await chooseAndImport(modsDir, 'application/java-archive', true)
+    uni.hideLoading()
+    if (imported.length > 0) {
+      uni.showToast({ title: `已导入 ${imported.length} 个 Mod`, icon: 'success' })
+      loadMods()
+    }
+  } catch (e: any) {
+    uni.hideLoading()
+    if (e?.message !== 'User cancelled') {
+      uni.showToast({ title: '导入失败: ' + (e?.message || ''), icon: 'none' })
+    }
+  }
 }
 
 function addResourcePack() {
-  uni.showModal({
-    title: '添加资源包',
-    content: '请将资源包文件放入 resourcepacks 文件夹中',
-    success: () => {
-      loadResourcePacks()
-      uni.showToast({ title: '已刷新列表', icon: 'success' })
+  uni.showActionSheet({
+    itemList: ['从文件导入 (.zip)', '用管理器打开目录'],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        importResourcePacks()
+      } else if (res.tapIndex === 1) {
+        openFolder('resourcepacks')
+      }
     }
   })
+}
+
+async function importResourcePacks() {
+  try {
+    const dir = settingsStore.resourcepacksDir || `${MINECRAFT_DIR}/resourcepacks`
+    uni.showLoading({ title: '选择文件...' })
+    const imported = await chooseAndImport(dir, 'application/zip', true)
+    uni.hideLoading()
+    if (imported.length > 0) {
+      uni.showToast({ title: `已导入 ${imported.length} 个资源包`, icon: 'success' })
+      loadResourcePacks()
+    }
+  } catch (e: any) {
+    uni.hideLoading()
+    if (e?.message !== 'User cancelled') {
+      uni.showToast({ title: '导入失败: ' + (e?.message || ''), icon: 'none' })
+    }
+  }
 }
 
 function addShaderPack() {
-  uni.showModal({
-    title: '添加光影包',
-    content: '请将光影包文件放入 shaderpacks 文件夹中',
-    success: () => {
-      loadShaderPacks()
-      uni.showToast({ title: '已刷新列表', icon: 'success' })
+  uni.showActionSheet({
+    itemList: ['从文件导入 (.zip)', '用管理器打开目录'],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        importShaderPacks()
+      } else if (res.tapIndex === 1) {
+        openFolder('shaderpacks')
+      }
     }
   })
 }
 
+async function importShaderPacks() {
+  try {
+    const dir = settingsStore.shaderpacksDir || `${MINECRAFT_DIR}/shaderpacks`
+    uni.showLoading({ title: '选择文件...' })
+    const imported = await chooseAndImport(dir, 'application/zip', true)
+    uni.hideLoading()
+    if (imported.length > 0) {
+      uni.showToast({ title: `已导入 ${imported.length} 个光影包`, icon: 'success' })
+      loadShaderPacks()
+    }
+  } catch (e: any) {
+    uni.hideLoading()
+    if (e?.message !== 'User cancelled') {
+      uni.showToast({ title: '导入失败: ' + (e?.message || ''), icon: 'none' })
+    }
+  }
+}
+
 function openFolder(folder: string) {
-  // 类型安全的字段映射
   const dirMap: Record<string, 'modsDir' | 'resourcepacksDir' | 'shaderpacksDir'> = {
     mods: 'modsDir',
     resourcepacks: 'resourcepacksDir',
@@ -188,8 +308,13 @@ function openFolder(folder: string) {
   }
   const key = dirMap[folder]
   const path = key ? settingsStore[key] : ''
-  const finalPath = path || (settingsStore.gameDir ? settingsStore.gameDir + '/' + folder : '')
-  uni.showToast({ title: finalPath ? '路径: ' + finalPath : '请在设置中配置路径', icon: 'none' })
+  const finalPath = path || `${MINECRAFT_DIR}/${folder}`
+  // #ifdef APP-PLUS
+  showOpenModeDialog(finalPath)
+  // #endif
+  // #ifndef APP-PLUS
+  uni.showToast({ title: '路径: ' + finalPath, icon: 'none' })
+  // #endif
 }
 
 onMounted(() => {
@@ -229,7 +354,10 @@ function getTypeLabel(type: string) {
     </view>
     
     <view class="mods__search-bar">
-      <input class="mods__search" v-model="search" :placeholder="'搜索 ' + (activeTab === 'mods' ? 'Mod' : activeTab === 'resourcepack' ? '资源包' : '光影包') + '...'" placeholder-style="color: #666" />
+      <input class="mods__search" v-model="search" :disabled="sortMode" :placeholder="sortMode ? '排序模式 (搜索已禁用)' : '搜索 ' + (activeTab === 'mods' ? 'Mod' : activeTab === 'resourcepack' ? '资源包' : '光影包') + '...'" placeholder-style="color: #666" />
+      <view class="mods__folder-btn" :class="{ 'mods__folder-btn--active': sortMode }" @tap="toggleSortMode">
+        <text>↕</text>
+      </view>
       <view class="mods__folder-btn" @tap="openFolder(activeTab === 'mods' ? 'mods' : activeTab === 'resourcepack' ? 'resourcepacks' : 'shaderpacks')">
         <text>📁</text>
       </view>
@@ -238,7 +366,11 @@ function getTypeLabel(type: string) {
     <scroll-view scroll-y class="mods__content">
       <!-- Mod 列表 -->
       <view v-if="activeTab === 'mods'" class="mods__list">
-        <view v-for="mod in filteredMods" :key="mod.id" class="item-card">
+        <view v-for="(mod, idx) in filteredMods" :key="mod.id" class="item-card" :class="{ 'item-card--sorting': sortMode }">
+          <view v-if="sortMode" class="item-card__sort">
+            <text class="item-card__sort-btn" :class="{ 'item-card__sort-btn--disabled': idx === 0 }" @tap.stop="moveItemByIndex(modList, filteredMods, idx, -1)">▲</text>
+            <text class="item-card__sort-btn" :class="{ 'item-card__sort-btn--disabled': idx === filteredMods.length - 1 }" @tap.stop="moveItemByIndex(modList, filteredMods, idx, 1)">▼</text>
+          </view>
           <view class="item-card__icon" style="background: rgba(255,183,213,0.15)">🧩</view>
           <view class="item-card__main">
             <text class="item-card__name">{{ mod.name }}</text>
@@ -256,7 +388,11 @@ function getTypeLabel(type: string) {
       
       <!-- 资源包列表 -->
       <view v-if="activeTab === 'resourcepack'" class="mods__list">
-        <view v-for="rp in filteredResourcePacks" :key="rp.id" class="item-card">
+        <view v-for="(rp, idx) in filteredResourcePacks" :key="rp.id" class="item-card" :class="{ 'item-card--sorting': sortMode }">
+          <view v-if="sortMode" class="item-card__sort">
+            <text class="item-card__sort-btn" :class="{ 'item-card__sort-btn--disabled': idx === 0 }" @tap.stop="moveItemByIndex(resourcePacks, filteredResourcePacks, idx, -1)">▲</text>
+            <text class="item-card__sort-btn" :class="{ 'item-card__sort-btn--disabled': idx === filteredResourcePacks.length - 1 }" @tap.stop="moveItemByIndex(resourcePacks, filteredResourcePacks, idx, 1)">▼</text>
+          </view>
           <view class="item-card__icon" style="background: rgba(100,200,255,0.15)">🎨</view>
           <view class="item-card__main">
             <text class="item-card__name">{{ rp.name }}</text>
@@ -274,7 +410,11 @@ function getTypeLabel(type: string) {
       
       <!-- 光影包列表 -->
       <view v-if="activeTab === 'shaderpack'" class="mods__list">
-        <view v-for="sp in filteredShaderPacks" :key="sp.id" class="item-card">
+        <view v-for="(sp, idx) in filteredShaderPacks" :key="sp.id" class="item-card" :class="{ 'item-card--sorting': sortMode }">
+          <view v-if="sortMode" class="item-card__sort">
+            <text class="item-card__sort-btn" :class="{ 'item-card__sort-btn--disabled': idx === 0 }" @tap.stop="moveItemByIndex(shaderPacks, filteredShaderPacks, idx, -1)">▲</text>
+            <text class="item-card__sort-btn" :class="{ 'item-card__sort-btn--disabled': idx === filteredShaderPacks.length - 1 }" @tap.stop="moveItemByIndex(shaderPacks, filteredShaderPacks, idx, 1)">▼</text>
+          </view>
           <view class="item-card__icon" style="background: rgba(255,200,100,0.15)">☀️</view>
           <view class="item-card__main">
             <text class="item-card__name">{{ sp.name }}</text>
@@ -333,6 +473,10 @@ function getTypeLabel(type: string) {
   &__folder-btn {
     width: 72rpx; height: 72rpx; display: flex; align-items: center; justify-content: center;
     background: rgba(255,255,255,0.06); border-radius: 12rpx; font-size: 32rpx;
+    &--active {
+      background: rgba(255,183,213,0.18);
+      color: #ffb7d5;
+    }
   }
   &__content { flex: 1; padding: 0 24rpx 40rpx; }
   &__list { display: flex; flex-direction: column; gap: 10rpx; }
@@ -345,7 +489,22 @@ function getTypeLabel(type: string) {
 .item-card {
   display: flex; align-items: center; padding: 18rpx 20rpx;
   background: rgba(255,255,255,0.04); border-radius: 12rpx; border: 2rpx solid rgba(255,255,255,0.04);
-  
+
+  &--sorting {
+    border-color: rgba(255,183,213,0.25);
+    background: rgba(255,183,213,0.05);
+  }
+  &__sort {
+    display: flex; flex-direction: column; gap: 4rpx; margin-right: 12rpx; flex-shrink: 0;
+  }
+  &__sort-btn {
+    width: 40rpx; height: 32rpx; display: flex; align-items: center; justify-content: center;
+    font-size: 22rpx; color: #ffb7d5; background: rgba(255,183,213,0.1);
+    border-radius: 6rpx; line-height: 1;
+    &--disabled {
+      color: #555; background: rgba(255,255,255,0.03);
+    }
+  }
   &__icon {
     width: 56rpx; height: 56rpx; display: flex; align-items: center; justify-content: center;
     font-size: 28rpx; border-radius: 12rpx; margin-right: 16rpx; flex-shrink: 0;

@@ -3,12 +3,15 @@ import { ref, computed, onMounted } from 'vue'
 import { useVersionStore } from '@/stores/version'
 import { useSettingsStore } from '@/stores/settings'
 import { formatBytes, formatTime } from '@/utils/format'
+import { importModpack } from '@/utils/modpack'
 
 const versionStore = useVersionStore()
 const settingsStore = useSettingsStore()
 const search = ref('')
 const activeTab = ref<'installed' | 'download'>('installed')
 const filterType = ref<'all' | 'release' | 'snapshot'>('release')
+const importing = ref(false)
+const importStep = ref('')
 
 onMounted(() => {
   versionStore.load()
@@ -75,6 +78,47 @@ function cancelDownload(id: string) {
   versionStore.cancelDownload(id)
 }
 
+function importPack() {
+  if (importing.value) return
+  uni.showActionSheet({
+    itemList: ['导入整合包 (.mrpack/.zip)', '取消'],
+    success: async (res) => {
+      if (res.tapIndex !== 0) return
+      importing.value = true
+      uni.showLoading({ title: '准备导入...', mask: true })
+      try {
+        const result = await importModpack((p) => {
+          importStep.value = p.step
+          uni.showLoading({ title: p.step, mask: true })
+        })
+        uni.hideLoading()
+        if (result.success) {
+          uni.showToast({
+            title: `导入成功: ${result.name} (${result.format})\n已安装 ${result.modCount} 个 Mod`,
+            icon: 'none',
+            duration: 3000
+          })
+          versionStore.load()
+        } else {
+          uni.showToast({
+            title: '导入失败: ' + (result.error || '未知错误'),
+            icon: 'none',
+            duration: 3000
+          })
+        }
+      } catch (e: any) {
+        uni.hideLoading()
+        if (e?.message !== 'User cancelled' && e?.message !== '未选择文件') {
+          uni.showToast({ title: '导入失败: ' + (e?.message || ''), icon: 'none' })
+        }
+      } finally {
+        importing.value = false
+        importStep.value = ''
+      }
+    }
+  })
+}
+
 function getDownloadTasksForVersion(versionId: string) {
   return versionStore.downloads.filter(d => d.name.includes(versionId))
 }
@@ -105,6 +149,9 @@ function getDownloadProgress(versionId: string): number {
     <view class="versions__header">
       <text class="versions__back" @tap="uni.navigateBack()">‹</text>
       <text class="versions__title">版本管理</text>
+      <view class="versions__header-actions">
+        <text class="versions__header-btn" @tap="importPack">📦</text>
+      </view>
     </view>
     
     <view class="versions__tabs">
@@ -277,6 +324,17 @@ function getDownloadProgress(versionId: string): number {
     display: flex;
     align-items: center;
     padding: 60rpx 24rpx 16rpx;
+  }
+
+  &__header-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 12rpx;
+  }
+
+  &__header-btn {
+    font-size: 36rpx;
+    padding: 8rpx 16rpx;
   }
   
   &__back {

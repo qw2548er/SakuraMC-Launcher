@@ -126,6 +126,20 @@
         "navigationBarTitleText": "文件管理",
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/downloads/downloads",
+      "style": {
+        "navigationBarTitleText": "下载管理",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/about/about",
+      "style": {
+        "navigationBarTitleText": "关于",
+        "navigationStyle": "custom"
+      }
     }
   ],
   "globalStyle": {

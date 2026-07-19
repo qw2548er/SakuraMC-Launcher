@@ -7,7 +7,8 @@ import { APP_VERSION } from '@/utils/updater'
 import { detectPlatform, formatBytes } from '@/utils/format'
 import { getDefaultGameDir, getDefaultLauncherDir } from '@/utils/path'
 import { recommendJavaVersion, detectSystemJava } from '@/utils/java'
-import { deleteFile, ensureDir, MINECRAFT_DIR, LAUNCHER_CACHE_DIR } from '@/utils/setup'
+import { deleteFile, ensureDir, MINECRAFT_DIR, LAUNCHER_CACHE_DIR, SAKURA_ROOT } from '@/utils/setup'
+import { showOpenModeDialog, chooseAndImportImage } from '@/utils/file-chooser'
 
 const settingsStore = useSettingsStore()
 const versionStore = useVersionStore()
@@ -170,25 +171,60 @@ function savePathConfig() {
 }
 
 function openFolder(path: string) {
+  if (!path) return
   // #ifdef APP-PLUS
-  try {
-    // plus.io 没有 openFile 方法,使用 plus.runtime.openFile 打开文件
-    // 对于目录,复制路径到剪贴板让用户在文件管理器中打开
-    if (path) {
-      uni.setClipboardData({
-        data: path,
-        success: () => {
-          uni.showToast({ title: '路径已复制,可在文件管理器中粘贴打开', icon: 'none', duration: 2500 })
-        }
-      })
-    }
-  } catch (e: any) {
-    uni.showToast({ title: '无法打开该路径', icon: 'none' })
-  }
+  showOpenModeDialog(path)
   // #endif
   // #ifndef APP-PLUS
   uni.showToast({ title: '仅手机端支持打开文件夹', icon: 'none' })
   // #endif
+}
+
+/** 选择自定义背景图 */
+async function chooseBackgroundImage() {
+  // #ifdef APP-PLUS
+  try {
+    uni.showLoading({ title: '选择图片...', mask: true })
+    const bgDir = `${SAKURA_ROOT}/config/backgrounds`
+    await ensureDir(bgDir)
+    const imported = await chooseAndImportImage(bgDir, 'background.png')
+    uni.hideLoading()
+    if (imported) {
+      settingsStore.update({
+        backgroundImagePath: imported.path,
+        useCustomBackground: true
+      })
+      uni.showToast({ title: '背景图已设置', icon: 'success' })
+    } else {
+      uni.showToast({ title: '未选择图片', icon: 'none' })
+    }
+  } catch (e: any) {
+    uni.hideLoading()
+    if (e?.message !== 'User cancelled') {
+      uni.showToast({ title: '设置失败: ' + (e?.message || ''), icon: 'none' })
+    }
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  uni.showToast({ title: '仅手机端支持', icon: 'none' })
+  // #endif
+}
+
+/** 清除自定义背景图 */
+function clearBackgroundImage() {
+  uni.showModal({
+    title: '清除背景图',
+    content: '确定要清除自定义背景图，恢复默认背景吗？',
+    success: (r) => {
+      if (r.confirm) {
+        settingsStore.update({
+          backgroundImagePath: '',
+          useCustomBackground: false
+        })
+        uni.showToast({ title: '已恢复默认', icon: 'success' })
+      }
+    }
+  })
 }
 
 const totalMemory = computed(() => {
@@ -711,6 +747,37 @@ function selectJavaVersion(id: string) {
               <text class="setting-item__arrow">›</text>
             </view>
           </picker>
+
+          <view class="setting-item">
+            <view class="setting-item__icon">🖼️</view>
+            <view class="setting-item__main">
+              <text class="setting-item__label">自定义背景图</text>
+              <text class="setting-item__value">{{ settingsStore.useCustomBackground ? '已启用' : '未启用' }}</text>
+            </view>
+            <switch
+              :checked="settingsStore.useCustomBackground"
+              color="#ff8fab"
+              @change="settingsStore.update({ useCustomBackground: $event.detail.value })"
+            />
+          </view>
+
+          <view class="setting-item" @tap="chooseBackgroundImage">
+            <view class="setting-item__icon">📁</view>
+            <view class="setting-item__main">
+              <text class="setting-item__label">选择背景图</text>
+              <text class="setting-item__value">{{ settingsStore.backgroundImagePath || '未选择' }}</text>
+            </view>
+            <text class="setting-item__arrow">›</text>
+          </view>
+
+          <view v-if="settingsStore.backgroundImagePath" class="setting-item" @tap="clearBackgroundImage">
+            <view class="setting-item__icon">🗑️</view>
+            <view class="setting-item__main">
+              <text class="setting-item__label" style="color: #ff6b6b">清除背景图</text>
+              <text class="setting-item__value">恢复默认背景</text>
+            </view>
+            <text class="setting-item__arrow">›</text>
+          </view>
         </view>
         
         <view class="setting-section">
@@ -758,11 +825,11 @@ function selectJavaVersion(id: string) {
           </view>
         </view>
         
-        <view class="settings__about">
+        <view class="settings__about" @tap="uni.navigateTo({ url: '/pages/about/about' })">
           <text class="settings__about-logo">🌸</text>
           <text class="settings__about-name">樱花 MC 启动器</text>
           <text class="settings__about-version">v{{ APP_VERSION }}</text>
-          <text class="settings__about-desc">内嵌樱花穿透完整功能</text>
+          <text class="settings__about-desc">内嵌樱花穿透完整功能 · 点击查看关于</text>
         </view>
       </view>
     </scroll-view>
