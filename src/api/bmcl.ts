@@ -50,7 +50,7 @@ export async function getVersionManifestV2(source: DownloadSource = 'bmcl') {
 }
 
 /** 单个版本 manifest */
-export async function getVersionJson(versionId: string, source: DownloadSource = 'bmcl') {
+export async function getVersionJson(versionId: string, source: DownloadSource = 'bmcl'): Promise<any> {
   const manifest = await getVersionManifest(source)
   const v = manifest.versions.find((x: any) => x.id === versionId)
   if (!v) throw new Error(`版本不存在: ${versionId}`)
@@ -60,32 +60,55 @@ export async function getVersionJson(versionId: string, source: DownloadSource =
     jsonUrl = jsonUrl.replace('https://piston-meta.mojang.com', BMCL_BASE + '/mc')
     try {
       const r = await uni.request({ url: jsonUrl })
-      result = r.data
-      if (!result?.downloads?.client?.url) {
-        throw new Error('BMCL 镜像数据不完整')
+      result = normalizeVersionJson(r.data)
+      if (!result?.downloads?.client?.url || !result?.mainClass) {
+        throw new Error('BMCL 镜像数据不完整 (缺 mainClass 或 client.url)')
       }
-    } catch (e) {
-      console.warn('[BMCL] 镜像获取失败,回退到 Mojang:', e.message)
+    } catch (e: any) {
+      console.warn('[BMCL] 镜像获取失败,回退到 Mojang:', e?.message || e)
       jsonUrl = v.url
+      result = null
     }
   } else if (source === 'mcbbs' && jsonUrl.includes('piston-meta.mojang.com')) {
     jsonUrl = jsonUrl.replace('https://piston-meta.mojang.com', MCBBS_BASE + '/mc')
     try {
       const r = await uni.request({ url: jsonUrl })
-      result = r.data
-      if (!result?.downloads?.client?.url) {
-        throw new Error('MCBBS 镜像数据不完整')
+      result = normalizeVersionJson(r.data)
+      if (!result?.downloads?.client?.url || !result?.mainClass) {
+        throw new Error('MCBBS 镜像数据不完整 (缺 mainClass 或 client.url)')
       }
-    } catch (e) {
-      console.warn('[MCBBS] 镜像获取失败,回退到 Mojang:', e.message)
+    } catch (e: any) {
+      console.warn('[MCBBS] 镜像获取失败,回退到 Mojang:', e?.message || e)
       jsonUrl = v.url
+      result = null
     }
   }
   if (!result) {
     const r = await uni.request({ url: jsonUrl })
-    result = r.data
+    result = normalizeVersionJson(r.data)
+  }
+  if (!result || !result.mainClass || !result.downloads?.client?.url) {
+    throw new Error(`版本 JSON 数据不完整: ${versionId} (mainClass=${result?.mainClass}, hasClientUrl=${!!result?.downloads?.client?.url})`)
   }
   return result
+}
+
+/**
+ * 规范化 version JSON
+ * uni.request 在某些情况下不会自动 parse JSON, 返回字符串
+ * 这里统一处理: 字符串 → 对象, 并校验关键字段
+ */
+function normalizeVersionJson(raw: any): any {
+  if (raw == null) return null
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null
+  return raw
 }
 
 /** Fabric Loader 元数据 */

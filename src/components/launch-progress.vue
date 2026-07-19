@@ -296,7 +296,7 @@ async function startLaunch() {
           }
         }
       })
-      
+
       // 确保 libs 和 assets 步骤标记完成
       if (getStep('libs').status !== 'done') {
         setStepStatus('libs', 'done')
@@ -304,17 +304,26 @@ async function startLaunch() {
       if (getStep('assets').status !== 'done') {
         setStepStatus('assets', 'done')
       }
-      
+
       appendToTerminal('')
       appendToTerminal('✓ 所有资源文件已就绪')
       appendToTerminal('')
     } catch (e: any) {
-      appendToTerminal(`[警告] 资源下载部分失败: ${e.message}`)
-      appendToTerminal('将尝试继续启动 (可能缺少部分文件)')
+      // 安装失败不能继续启动, 否则会用空 versionJson 生成无效启动命令
+      appendToTerminal(`[错误] 资源下载失败: ${e?.message || e}`)
       appendToTerminal('')
-      // 标记为 done 继续走流程
-      setStepStatus('libs', 'done')
-      setStepStatus('assets', 'done')
+      appendToTerminal('可能原因:')
+      appendToTerminal('  1. 网络不通或镜像源异常, 可在设置里切换下载源')
+      appendToTerminal('  2. 存储空间不足')
+      appendToTerminal('  3. H5 网页版无法写入本地游戏目录, 请安装 Android APK')
+      appendToTerminal('')
+      setStepStatus('libs', 'error', { error: e?.message })
+      setStepStatus('assets', 'error', { error: e?.message })
+      setStepStatus('login', 'error')
+      setStepStatus('launch', 'error')
+      commandStatus.value = 'error'
+      showTerminal.value = true
+      throw e  // 让外层 catch 处理错误弹窗
     }
     
     // ===== Step 5: 登录 =====
@@ -355,14 +364,31 @@ async function startLaunch() {
     try {
       versionJson = await resolveVersionJson(version.id, source, gameDir)
     } catch (e: any) {
-      appendToTerminal(`[警告] 无法获取版本 JSON: ${e.message}`)
-      appendToTerminal('使用简化参数启动')
+      appendToTerminal(`[错误] 无法获取版本 JSON: ${e?.message || e}`)
+      appendToTerminal('')
+      appendToTerminal('可能原因: 网络异常或镜像源返回数据不完整')
+      appendToTerminal('建议: 在设置页切换下载源 (Mojang / BMCL / MCBBS) 后重试')
+      setStepStatus('launch', 'error', { error: e?.message })
+      commandStatus.value = 'error'
+      showTerminal.value = true
+      throw e
     }
-    
+
+    // 严格校验 versionJson 完整性, 避免用空对象生成无效启动命令
+    if (!versionJson || !versionJson.mainClass || !versionJson.downloads?.client?.url) {
+      const detail = `mainClass=${versionJson?.mainClass}, hasClientUrl=${!!versionJson?.downloads?.client?.url}, hasLibraries=${!!versionJson?.libraries?.length}`
+      appendToTerminal(`[错误] 版本 JSON 数据不完整: ${detail}`)
+      appendToTerminal('无法生成有效启动命令, 请删除该版本后重新下载')
+      setStepStatus('launch', 'error', { error: '版本 JSON 不完整' })
+      commandStatus.value = 'error'
+      showTerminal.value = true
+      throw new Error(`版本 JSON 数据不完整: ${detail}`)
+    }
+
     const username = account?.username || 'Steve'
     const uuid = account?.uuid || '00000000-0000-0000-0000-000000000000'
     const accessToken = (account as any)?.accessToken || '0'
-    
+
     if (versionJson) {
       const launchCmd = buildLaunchCommand({
         versionId: version.id,

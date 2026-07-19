@@ -293,7 +293,15 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
     onStepChange,
     onProgress
   } = options
-  
+
+  // H5 端无法写入本地文件系统, 不能真正安装游戏
+  // 提前抛错, 避免后续"假装成功"导致用空 versionJson 启动
+  // 运行时检测: APP-PLUS 环境下 plus 是全局对象, H5 端不存在
+  const isH5 = typeof (globalThis as any).plus === 'undefined'
+  if (isH5) {
+    throw new Error('H5 网页版无法下载游戏文件到本地, 请安装 Android APK 后重试')
+  }
+
   const steps: InstallStep[] = STEPS.map(s => ({
     ...s,
     status: 'pending',
@@ -556,7 +564,7 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
     '-Dfml.ignorePatchDiscrepancies=true',
     `-Djava.library.path=${nativesDir}`,
     `-Dminecraft.launcher.brand=${versionType}`,
-    '-Dminecraft.launcher.version=0.3.2',
+    '-Dminecraft.launcher.version=0.5.0',
     ...extraJvmArgs
   ]
   
