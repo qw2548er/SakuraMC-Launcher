@@ -14,6 +14,7 @@ import {
 import { MINECRAFT_DIR, ensureDir } from '@/utils/setup'
 import { formatBytes, copyText } from '@/utils/format'
 import { APP_VERSION } from '@/utils/updater'
+import { isCordova, waitForReady, unzipFile, fileExists as cfsFileExists, listZip } from '@/utils/cordova-fs'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -73,15 +74,14 @@ function appendToTerminal(text: string) {
 }
 
 async function extractNatives(versionJson: any, gameDir: string) {
-  // #ifdef APP-PLUS
+  if (!isCordova()) return
   try {
-    const fs = plus.io.getFileSystemManager()
     const versionId = versionJson.id
     const nativesDir = `${gameDir}/versions/${versionId}/natives`
     const librariesDir = `${gameDir}/libraries`
-    
+
     await ensureDir(nativesDir)
-    
+
     const libs = versionJson.libraries || []
     for (const lib of libs) {
       if (lib.natives && lib.natives.linux && lib.downloads?.classifiers) {
@@ -89,32 +89,16 @@ async function extractNatives(versionJson: any, gameDir: string) {
         const classifier = lib.downloads.classifiers[nativeKey]
         if (classifier) {
           const libPath = `${librariesDir}/${classifier.path}`
-          try {
-            fs.accessSync(libPath)
-            appendToTerminal(`  - 提取 natives: ${classifier.path}`)
-            const unzip = plus.android.newObject('java.util.zip.ZipFile', libPath)
-            const entries = plus.android.invoke(unzip, 'entries')
-            while (plus.android.invoke(entries, 'hasMoreElements')) {
-              const entry = plus.android.invoke(entries, 'nextElement')
-              const entryName = plus.android.invoke(entry, 'getName')
-              if (!lib.extract?.exclude?.includes(entryName)) {
-                const destPath = `${nativesDir}/${entryName}`
-                const destDir = destPath.substring(0, destPath.lastIndexOf('/'))
-                try { fs.accessSync(destDir) } catch { fs.mkdirSync({ dirPath: destDir, recursive: true }) }
-                const is = plus.android.invoke(unzip, 'getInputStream', entry)
-                const os = plus.android.newObject('java.io.FileOutputStream', destPath)
-                const buffer = plus.android.newObject('byte[1024]')
-                let len = 0
-                while ((len = plus.android.invoke(is, 'read', buffer)) != -1) {
-                  plus.android.invoke(os, 'write', buffer, 0, len)
-                }
-                plus.android.invoke(os, 'close')
-                plus.android.invoke(is, 'close')
-              }
-            }
-            plus.android.invoke(unzip, 'close')
-          } catch (e: any) {
+          const exists = await cfsFileExists(libPath)
+          if (!exists) {
             appendToTerminal(`  - 跳过缺失的 natives: ${classifier.path}`)
+            continue
+          }
+          appendToTerminal(`  - 提取 natives: ${classifier.path}`)
+          try {
+            await unzipFile(libPath, nativesDir)
+          } catch (e: any) {
+            appendToTerminal(`  - [警告] 提取失败: ${e.message || e}`)
           }
         }
       }
@@ -123,7 +107,6 @@ async function extractNatives(versionJson: any, gameDir: string) {
   } catch (e: any) {
     appendToTerminal(`[警告] Natives 提取失败: ${e.message}`)
   }
-  // #endif
 }
 
 async function runCommandOnAndroid(cmd: string, versionJson: any, gameDir: string) {
@@ -133,10 +116,12 @@ async function runCommandOnAndroid(cmd: string, versionJson: any, gameDir: strin
   await extractNatives(versionJson, gameDir)
   
   try {
-    // 尝试通过 Cordova shell 插件执行
+    await waitForReady()
+    
+    // 尝试通过 Cordova shell 插件执行 (如果有)
     const exec = (window as any).cordova?.plugins?.shell?.exec
     if (exec) {
-      appendToTerminal('[信息] 使用 Cordova Shell 插件执行...')
+      appendToTerminal('[信息] 使用 Shell 插件执行...')
       return new Promise<void>((resolve) => {
         exec(cmd, (output: any, error: any) => {
           if (error) {
@@ -149,55 +134,14 @@ async function runCommandOnAndroid(cmd: string, versionJson: any, gameDir: strin
         })
       })
     }
-    throw new Error('无 shell 执行插件')
+    
+    throw new Error('无可用的执行插件')
   } catch (e: any) {
-    try {
-      // 备用: 使用 plus.android 直接调用 (非阻塞方式)
-      appendToTerminal('[信息] 使用 plus.android API 执行...')
-      const processBuilder = plus.android.newObject('java.lang.ProcessBuilder', ['sh', '-c', cmd])
-      plus.android.invoke(processBuilder, 'redirectErrorStream', true)
-      
-      const env = plus.android.invoke(processBuilder, 'environment')
-      plus.android.invoke(env, 'put', 'LD_LIBRARY_PATH', `${gameDir}/versions/${versionJson.id}/natives`)
-      
-      const process = plus.android.invoke(processBuilder, 'start')
-      appendToTerminal(`[信息] 游戏进程已启动 (PID: ${plus.android.invoke(process, 'pid')})`)
-      
-      // 异步读取输出,不阻塞主进程
-      setTimeout(() => {
-        try {
-          const reader = plus.android.newObject('java.io.BufferedReader', 
-            plus.android.newObject('java.io.InputStreamReader', 
-              plus.android.invoke(process, 'getInputStream')))
-          
-          let line: string | null = ''
-          let lineCount = 0
-          const readLine = () => {
-            try {
-              if ((line = plus.android.invoke(reader, 'readLine')) !== null && lineCount < 200) {
-                appendToTerminal(line)
-                lineCount++
-                setTimeout(readLine, 100)
-              } else {
-                plus.android.invoke(reader, 'close')
-              }
-            } catch {
-              // 忽略读取错误
-            }
-          }
-          readLine()
-        } catch {
-          // 忽略读取错误
-        }
-      }, 500)
-      
-    } catch (e2: any) {
-      appendToTerminal(`[无法执行] ${e2.message}`)
-      appendToTerminal('')
-      appendToTerminal('提示: 由于技术限制,当前版本无法直接启动游戏')
-      appendToTerminal('但所有游戏文件已下载到 /storage/emulated/0/SakuraMC/.minecraft/')
-      appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器直接导入运行')
-    }
+    appendToTerminal(`[无法执行] ${e.message || e}`)
+    appendToTerminal('')
+    appendToTerminal('提示: 由于技术限制,当前版本无法直接启动游戏')
+    appendToTerminal('但所有游戏文件已下载到 /storage/emulated/0/SakuraMC/.minecraft/')
+    appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器直接导入运行')
   }
 }
 
@@ -205,6 +149,15 @@ async function startLaunch() {
   isLaunching.value = true
   
   try {
+    // 如果检测到 Cordova 环境, 等待 deviceready 确保插件可用
+    if (isCordova()) {
+      try {
+        await waitForReady()
+      } catch (e: any) {
+        console.warn('[Launch] Cordova 初始化等待失败:', e?.message || e)
+      }
+    }
+    
     const version = versionStore.selected
     if (!version) {
       throw new Error('未选择游戏版本')
@@ -428,22 +381,20 @@ async function startLaunch() {
       appendToTerminal('')
       appendToTerminal('----- 开始执行 -----')
       
-      // #ifdef APP-PLUS
-      showTerminal.value = true
-      await runCommandOnAndroid(launchCmd, versionJson, gameDir)
-      // #endif
-      
-      // #ifndef APP-PLUS
-      appendToTerminal('')
-      appendToTerminal('⚠️  当前环境无法直接执行 Java 命令')
-      appendToTerminal('请安装 Android APK 或 Windows 桌面版')
-      appendToTerminal('')
-      appendToTerminal('所有游戏文件已保存到:')
-      appendToTerminal('  ' + gameDir)
-      appendToTerminal('')
-      appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器')
-      appendToTerminal('将游戏目录设置为上述路径即可直接运行')
-      // #endif
+      if (isCordova()) {
+        showTerminal.value = true
+        await runCommandOnAndroid(launchCmd, versionJson, gameDir)
+      } else {
+        appendToTerminal('')
+        appendToTerminal('⚠️  当前环境无法直接执行 Java 命令')
+        appendToTerminal('请安装 Android APK 或 Windows 桌面版')
+        appendToTerminal('')
+        appendToTerminal('所有游戏文件已保存到:')
+        appendToTerminal('  ' + gameDir)
+        appendToTerminal('')
+        appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器')
+        appendToTerminal('将游戏目录设置为上述路径即可直接运行')
+      }
     }
     
     setStepStatus('launch', 'done')

@@ -1,12 +1,15 @@
 /**
  * Minecraft 游戏安装与启动核心模块
- * 参考 FCL (FoldCraftLauncher) 的启动流程
- * 支持完整的资源下载、完整性校验、启动参数生成
+ *
+ * 注意: 本项目使用 uni-app H5 + Cordova 打包 APK, 没有 plus 对象.
+ * 所有文件操作通过 cordova-fs 抽象层完成.
+ * H5 浏览器环境下无法下载/写入本地文件, 会明确抛错.
  */
 
-import { getAssetBase, getLibraryBase, getVersionJson, type DownloadSource } from '@/api/bmcl'
-import { ensureDir, writeFileIfNotExists, MINECRAFT_DIR } from './setup'
-import { downloadFile } from './downloader'
+import { getAssetBase, getVersionJson, type DownloadSource } from '@/api/bmcl'
+import { ensureDir, writeFileIfNotExists, MINECRAFT_DIR, readFileText } from './setup'
+import * as cfs from './cordova-fs'
+import { waitForReady } from './cordova-fs'
 
 export interface LibraryInfo {
   name: string
@@ -94,38 +97,46 @@ const STEPS = [
 
 /**
  * 获取版本 JSON（支持继承版本如 Forge/Fabric）
+ * 优先读本地, 没有则从网络获取
  */
 export async function resolveVersionJson(versionId: string, source: DownloadSource = 'bmcl', gameDir: string = MINECRAFT_DIR): Promise<VersionJson> {
   const versionsDir = `${gameDir}/versions`
   const versionDir = `${versionsDir}/${versionId}`
   const jsonPath = `${versionDir}/${versionId}.json`
-  
+
   let versionJson: VersionJson
-  
+
   // 先尝试读取本地文件
   try {
-    // #ifdef APP-PLUS
-    const fs = plus.io.getFileSystemManager()
-    const res = fs.readFileSync(jsonPath, 'utf-8')
-    versionJson = JSON.parse(res)
-    console.log('[Install] 从本地读取版本 JSON:', versionId)
-    // #endif
-    // #ifndef APP-PLUS
-    versionJson = await getVersionJson(versionId, source)
-    // #endif
+    if (cfs.isCordova()) {
+      const text = await readFileText(jsonPath)
+      if (text) {
+        versionJson = JSON.parse(text)
+        console.log('[Install] 从本地读取版本 JSON:', versionId)
+      } else {
+        versionJson = await getVersionJson(versionId, source)
+        console.log('[Install] 从网络获取版本 JSON:', versionId)
+      }
+    } else {
+      versionJson = await getVersionJson(versionId, source)
+    }
   } catch {
-    // 本地没有,从网络获取
     versionJson = await getVersionJson(versionId, source)
     console.log('[Install] 从网络获取版本 JSON:', versionId)
   }
-  
+
+  // 校验 versionJson 完整性
+  if (!versionJson || !versionJson.downloads?.client?.url || !versionJson.mainClass) {
+    throw new Error(`版本 ${versionId} 的元数据不完整, 请检查下载源或网络`)
+  }
+
   // 如果有继承,递归合并
   if (versionJson.inheritsFrom && versionJson.inheritsFrom !== versionId) {
     const parentJson = await resolveVersionJson(versionJson.inheritsFrom, source, gameDir)
     versionJson = mergeVersionJson(parentJson, versionJson)
     console.log('[Install] 合并继承版本:', versionId, '<-', versionJson.inheritsFrom)
   }
-  
+
   return versionJson
 }
 
@@ -134,39 +145,32 @@ export async function resolveVersionJson(versionId: string, source: DownloadSour
  */
 function mergeVersionJson(parent: VersionJson, child: VersionJson): VersionJson {
   const merged: any = { ...parent, ...child }
-  
-  // 合并 libraries (子版本在前,父版本在后)
+
   const parentLibs = parent.libraries || []
   const childLibs = child.libraries || []
   merged.libraries = [...childLibs, ...parentLibs]
-  
-  // 合并 arguments
+
   const parentArgs = parent.arguments || { game: [], jvm: [] }
   const childArgs = child.arguments || { game: [], jvm: [] }
   merged.arguments = {
     game: [...(childArgs.game || []), ...(parentArgs.game || [])],
     jvm: [...(childArgs.jvm || []), ...(parentArgs.jvm || [])]
   }
-  
-  // 子版本的 jar 优先,否则用父版本的 id
+
   merged.jar = child.jar || parent.id
-  
-  // assetIndex 用子版本的,没有就用父版本的
   merged.assetIndex = child.assetIndex || parent.assetIndex
   merged.assets = child.assets || parent.assets
-  
-  // mainClass 用子版本的
   merged.mainClass = child.mainClass || parent.mainClass
-  
+
   return merged as VersionJson
 }
 
 /**
- * 检查库文件是否需要下载 (根据规则过滤)
+ * 检查库文件是否需要下载
  */
 function shouldIncludeLibrary(lib: LibraryInfo, osName: string = 'linux', arch: string = 'aarch64'): boolean {
   if (!lib.rules || lib.rules.length === 0) return true
-  
+
   let allowed = false
   for (const rule of lib.rules) {
     if (rule.action === 'allow' && !rule.os) {
@@ -193,16 +197,16 @@ export function getRequiredLibraries(versionJson: VersionJson, osName: string = 
   sha1: string
   size: number
   isNative: boolean
+  extractExclude?: string[]
 }> {
   const libs: any[] = []
   const libBase = 'https://libraries.minecraft.net'
-  
+
   const libraries = versionJson.libraries || []
-  
+
   for (const lib of libraries) {
     if (!shouldIncludeLibrary(lib, osName)) continue
-    
-    // 主 artifact
+
     if (lib.downloads?.artifact) {
       libs.push({
         path: lib.downloads.artifact.path,
@@ -212,8 +216,7 @@ export function getRequiredLibraries(versionJson: VersionJson, osName: string = 
         isNative: false
       })
     }
-    
-    // natives
+
     if (lib.natives && lib.downloads?.classifiers) {
       const nativeKey = lib.natives[osName]
       if (nativeKey) {
@@ -231,7 +234,7 @@ export function getRequiredLibraries(versionJson: VersionJson, osName: string = 
       }
     }
   }
-  
+
   return libs
 }
 
@@ -241,15 +244,14 @@ export function getRequiredLibraries(versionJson: VersionJson, osName: string = 
 export async function getAssetIndex(versionJson: VersionJson, source: DownloadSource = 'bmcl'): Promise<AssetInfo> {
   const assetBase = getAssetBase(source)
   const indexUrl = versionJson.assetIndex.url
-  
-  // 转换为镜像源
+
   let url = indexUrl
   if (source === 'bmcl') {
     url = indexUrl.replace('https://piston-data.mojang.com', 'https://bmclapi2.bangbang93.com')
   } else if (source === 'mcbbs') {
     url = indexUrl.replace('https://piston-data.mojang.com', 'https://download.mcbbs.net')
   }
-  
+
   console.log('[Install] 获取资源索引:', url)
   const r = await uni.request({ url })
   return r.data as AssetInfo
@@ -259,47 +261,49 @@ export async function getAssetIndex(versionJson: VersionJson, source: DownloadSo
  * 检查文件是否存在且大小正确
  */
 async function fileExistsWithSize(filePath: string, expectedSize: number): Promise<boolean> {
-  // #ifdef APP-PLUS
-  return new Promise((resolve) => {
-    try {
-      const fs = plus.io.getFileSystemManager()
-      fs.stat({
-        path: filePath,
-        success: (res: any) => {
-          // HTML5+ stat 回调返回 { stats: FileStat }, 但不同版本兼容
-          const stat = res?.stats || res
-          resolve(!!stat && stat.size === expectedSize)
-        },
-        fail: () => resolve(false)
-      })
-    } catch {
-      resolve(false)
-    }
-  })
-  // #endif
-  // #ifndef APP-PLUS
-  return false
-  // #endif
+  if (!cfs.isCordova()) return false
+  try {
+    const info = await cfs.getFileInfo(filePath)
+    return info.exists && info.isFile && info.size === expectedSize
+  } catch {
+    return false
+  }
 }
 
 /**
- * 完整安装游戏版本 (下载所有必要资源)
+ * 下载单个文件, 带进度回调
+ */
+async function downloadFileWithProgress(
+  url: string,
+  savePath: string,
+  onProgress?: (loaded: number, total: number, speed: number) => void
+): Promise<void> {
+  await cfs.downloadFile(url, savePath, (loaded, total) => {
+    if (onProgress) onProgress(loaded, total, 0)
+  })
+}
+
+/**
+ * 完整安装游戏版本
  */
 export async function installVersion(options: InstallOptions): Promise<boolean> {
   const {
     versionId,
     gameDir = MINECRAFT_DIR,
     source = 'bmcl',
-    onStepChange,
-    onProgress
+    onStepChange
   } = options
 
-  // H5 端无法写入本地文件系统, 不能真正安装游戏
-  // 提前抛错, 避免后续"假装成功"导致用空 versionJson 启动
-  // 运行时检测: APP-PLUS 环境下 plus 是全局对象, H5 端不存在
-  const isH5 = typeof (globalThis as any).plus === 'undefined'
-  if (isH5) {
+  // H5 浏览器环境无法下载写入本地文件, 提前抛错
+  if (!cfs.isCordova()) {
     throw new Error('H5 网页版无法下载游戏文件到本地, 请安装 Android APK 后重试')
+  }
+
+  // 等待 Cordova deviceready, 确保所有插件可用
+  try {
+    await waitForReady()
+  } catch (e: any) {
+    console.warn('[Install] Cordova ready 等待失败, 继续尝试:', e?.message || e)
   }
 
   const steps: InstallStep[] = STEPS.map(s => ({
@@ -308,7 +312,7 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
     progress: 0,
     total: 0
   }))
-  
+
   function updateStep(id: string, patch: Partial<InstallStep>) {
     const step = steps.find(s => s.id === id)
     if (step) {
@@ -316,30 +320,30 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
       onStepChange?.(step, steps)
     }
   }
-  
+
   const versionsDir = `${gameDir}/versions`
   const versionDir = `${versionsDir}/${versionId}`
   const jarPath = `${versionDir}/${versionId}.jar`
   const jsonPath = `${versionDir}/${versionId}.json`
   const librariesDir = `${gameDir}/libraries`
   const assetsDir = `${gameDir}/assets`
-  
+
   let versionJson: VersionJson
   let totalFiles = 0
   let completedFiles = 0
-  
+
   try {
     // ===== Step 1: 获取版本信息 =====
     updateStep('check', { status: 'running', progress: 0, total: 1 })
-    
+
     await ensureDir(versionDir)
     versionJson = await resolveVersionJson(versionId, source, gameDir)
-    
+
     // 保存版本 JSON
     await writeFileIfNotExists(jsonPath, JSON.stringify(versionJson, null, 2))
-    
+
     updateStep('check', { status: 'done', progress: 1, total: 1 })
-    
+
     // ===== Step 2: 下载客户端 JAR =====
     const clientInfo = versionJson.downloads?.client
     if (clientInfo) {
@@ -347,89 +351,79 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
       if (!jarExists) {
         let clientUrl = clientInfo.url
         if (source === 'bmcl') {
-          clientUrl = clientUrl.replace('https://piston-data.mojang.com', 'https://bmclapi2.bangbang93.com')
-                           .replace('https://launcher.mojang.com', 'https://bmclapi2.bangbang93.com')
+          clientUrl = clientUrl
+            .replace('https://piston-data.mojang.com', 'https://bmclapi2.bangbang93.com')
+            .replace('https://launcher.mojang.com', 'https://bmclapi2.bangbang93.com')
         } else if (source === 'mcbbs') {
-          clientUrl = clientUrl.replace('https://piston-data.mojang.com', 'https://download.mcbbs.net')
-                           .replace('https://launcher.mojang.com', 'https://download.mcbbs.net')
+          clientUrl = clientUrl
+            .replace('https://piston-data.mojang.com', 'https://download.mcbbs.net')
+            .replace('https://launcher.mojang.com', 'https://download.mcbbs.net')
         }
-        
+
         console.log('[Install] 下载客户端 JAR:', clientUrl)
-        await downloadFile({
-          url: clientUrl,
-          savePath: jarPath,
-          timeout: 600000,
-          onProgress: (downloaded, total, speed) => {
-            updateStep('check', { progress: downloaded, total, speed })
-          }
+        await downloadFileWithProgress(clientUrl, jarPath, (downloaded, total, speed) => {
+          updateStep('check', { progress: downloaded, total, speed })
         })
       } else {
         console.log('[Install] 客户端 JAR 已存在,跳过')
       }
     }
-    
+
     // ===== Step 3: 下载 Libraries =====
     updateStep('libs', { status: 'running', progress: 0, total: 0 })
-    
+
     const requiredLibs = getRequiredLibraries(versionJson, 'linux', 'aarch64')
     totalFiles = requiredLibs.length
     completedFiles = 0
     let totalSize = requiredLibs.reduce((s, l) => s + l.size, 0)
     let downloadedSize = 0
-    
+
     updateStep('libs', { total: totalSize, progress: 0 })
-    
+
     console.log(`[Install] 需要下载 ${requiredLibs.length} 个库文件,总大小: ${formatSize(totalSize)}`)
-    
+
     for (const lib of requiredLibs) {
       const libPath = `${librariesDir}/${lib.path}`
       const exists = await fileExistsWithSize(libPath, lib.size)
-      
+
       if (exists) {
         completedFiles++
         downloadedSize += lib.size
         updateStep('libs', { progress: downloadedSize, total: totalSize })
         continue
       }
-      
-      // 转换下载地址为镜像源
+
       let libUrl = lib.url
       if (source === 'bmcl') {
         libUrl = libUrl.replace('https://libraries.minecraft.net', 'https://bmclapi2.bangbang93.com/libraries')
       } else if (source === 'mcbbs') {
         libUrl = libUrl.replace('https://libraries.minecraft.net', 'https://download.mcbbs.net/libraries')
       }
-      
+
       try {
         await ensureDir(libPath.substring(0, libPath.lastIndexOf('/')))
-        
-        await downloadFile({
-          url: libUrl,
-          savePath: libPath,
-          timeout: 120000,
-          onProgress: (d, t, speed) => {
-            updateStep('libs', { 
-              progress: downloadedSize + d, 
-              total: totalSize,
-              speed 
-            })
-          }
+
+        await downloadFileWithProgress(libUrl, libPath, (d, t, speed) => {
+          updateStep('libs', {
+            progress: downloadedSize + d,
+            total: totalSize,
+            speed
+          })
         })
-        
+
         completedFiles++
         downloadedSize += lib.size
         console.log(`[Install] 库文件下载完成 (${completedFiles}/${totalFiles}): ${lib.path}`)
       } catch (e: any) {
         console.warn(`[Install] 库文件下载失败: ${lib.path}`, e.message)
-        // 非关键文件失败不终止,继续下载其他的
       }
     }
-    
+
     updateStep('libs', { status: 'done', progress: totalSize, total: totalSize })
-    
+
     // ===== Step 4: 下载 Assets 资源 =====
     updateStep('assets', { status: 'running', progress: 0, total: 0 })
-    
+
     if (!versionJson.assetIndex) {
       console.warn('[Install] 版本没有 assetIndex,跳过资源下载')
       updateStep('assets', { status: 'done', progress: 0, total: 0 })
@@ -438,31 +432,29 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
       const objects = Object.values(assetIndex.objects || {})
       const totalAssetSize = objects.reduce((s, o) => s + o.size, 0)
       let downloadedAssetSize = 0
-      
+
       updateStep('assets', { total: totalAssetSize, progress: 0 })
       console.log(`[Install] 需要下载 ${objects.length} 个资源文件,总大小: ${formatSize(totalAssetSize)}`)
-      
+
       await ensureDir(`${assetsDir}/objects`)
       await ensureDir(`${assetsDir}/indexes`)
-      
-      // 保存资源索引
+
       const indexPath = `${assetsDir}/indexes/${versionJson.assetIndex.id}.json`
       await writeFileIfNotExists(indexPath, JSON.stringify(assetIndex))
-      
+
       const assetBase = getAssetBase(source)
       let assetCompleted = 0
-      
-      // 限制并发下载数量
+
       const concurrency = 3
       let index = 0
-      
+
       async function downloadNext() {
         while (index < objects.length) {
           const obj = objects[index++]
           const hash = obj.hash
           const subDir = hash.substring(0, 2)
           const objPath = `${assetsDir}/objects/${subDir}/${hash}`
-          
+
           const exists = await fileExistsWithSize(objPath, obj.size)
           if (exists) {
             assetCompleted++
@@ -470,16 +462,12 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
             updateStep('assets', { progress: downloadedAssetSize, total: totalAssetSize })
             continue
           }
-          
+
           const objUrl = `${assetBase}/${subDir}/${hash}`
-          
+
           try {
             await ensureDir(`${assetsDir}/objects/${subDir}`)
-            await downloadFile({
-              url: objUrl,
-              savePath: objPath,
-              timeout: 60000
-            })
+            await cfs.downloadFile(objUrl, objPath)
             assetCompleted++
             downloadedAssetSize += obj.size
             updateStep('assets', { progress: downloadedAssetSize, total: totalAssetSize })
@@ -488,20 +476,19 @@ export async function installVersion(options: InstallOptions): Promise<boolean> 
           }
         }
       }
-      
-      // 并发下载
+
       const workers = []
       for (let i = 0; i < concurrency; i++) {
         workers.push(downloadNext())
       }
       await Promise.all(workers)
-      
+
       updateStep('assets', { status: 'done', progress: totalAssetSize, total: totalAssetSize })
     }
-    
+
     console.log(`[Install] 版本 ${versionId} 安装完成!`)
     return true
-    
+
   } catch (e: any) {
     console.error('[Install] 安装失败:', e)
     throw e
@@ -519,7 +506,6 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
 } {
   const {
     versionId,
-    javaPath,
     minMemory = 1024,
     maxMemory = 2048,
     username = 'Steve',
@@ -534,26 +520,23 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
     extraJvmArgs = [],
     extraGameArgs = []
   } = options
-  
+
   const versionsDir = `${gameDir}/versions`
   const versionDir = `${versionsDir}/${versionId}`
   const librariesDir = `${gameDir}/libraries`
   const assetsDir = `${gameDir}/assets`
   const nativesDir = `${versionDir}/natives`
-  
-  // 构建 classpath
+
   const requiredLibs = getRequiredLibraries(versionJson, 'linux', 'aarch64')
   const classpathEntries = requiredLibs
     .filter(l => !l.isNative)
     .map(l => `${librariesDir}/${l.path}`)
-  
-  // 添加版本 jar
+
   const jarId = versionJson.jar || versionId
   classpathEntries.push(`${versionsDir}/${jarId}/${jarId}.jar`)
-  
+
   const classpath = classpathEntries.join(':')
-  
-  // JVM 参数
+
   const jvmArgs: string[] = [
     `-Xms${minMemory}M`,
     `-Xmx${maxMemory}M`,
@@ -564,11 +547,10 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
     '-Dfml.ignorePatchDiscrepancies=true',
     `-Djava.library.path=${nativesDir}`,
     `-Dminecraft.launcher.brand=${versionType}`,
-    '-Dminecraft.launcher.version=0.5.0',
+    '-Dminecraft.launcher.version=0.5.1',
     ...extraJvmArgs
   ]
-  
-  // 游戏参数
+
   const assetIndexId = versionJson.assetIndex?.id || versionJson.assets || versionId
   const gameArgs: string[] = [
     '--username', username,
@@ -582,24 +564,24 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
     '--xuid', '0',
     '--versionType', versionType
   ]
-  
+
   if (fullscreen) {
     gameArgs.push('--fullscreen')
   } else {
     gameArgs.push('--width', String(width), '--height', String(height))
   }
-  
+
   if (server) {
     gameArgs.push('--server', server, '--port', String(port))
   }
-  
+
   gameArgs.push(...extraGameArgs)
-  
+
   return {
     jvmArgs,
     gameArgs,
     classpath,
-    mainClass: versionJson.mainClass
+    mainClass: versionJson.mainClass || 'net.minecraft.client.main.Main'
   }
 }
 
@@ -608,17 +590,15 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
  */
 export function buildLaunchCommand(options: LaunchOptions, versionJson: VersionJson, gameDir: string = MINECRAFT_DIR): string {
   const { jvmArgs, gameArgs, classpath, mainClass } = buildLaunchArgs(options, versionJson, gameDir)
-  
-  const mainClassToUse = mainClass || 'net.minecraft.client.main.Main'
-  
+
   const cmd = [
     `cd "${gameDir}"`,
     `java ${jvmArgs.join(' ')}`,
     `-cp "${classpath}"`,
-    mainClassToUse,
+    mainClass,
     ...gameArgs
   ].join(' ')
-  
+
   return cmd
 }
 
@@ -643,43 +623,23 @@ export async function isVersionInstalled(versionId: string, gameDir: string = MI
   const versionDir = `${versionsDir}/${versionId}`
   const jarPath = `${versionDir}/${versionId}.jar`
   const jsonPath = `${versionDir}/${versionId}.json`
-  
+
   let hasJar = false
   let hasJson = false
   let hasLibraries = false
   let hasAssets = false
-  
-  // #ifdef APP-PLUS
-  const fs = plus.io.getFileSystemManager()
-  hasJar = await new Promise(resolve => {
-    try {
-      fs.access({ path: jarPath, success: () => resolve(true), fail: () => resolve(false) })
-    } catch { resolve(false) }
-  })
-  hasJson = await new Promise(resolve => {
-    try {
-      fs.access({ path: jsonPath, success: () => resolve(true), fail: () => resolve(false) })
-    } catch { resolve(false) }
-  })
-  // #endif
-  
-  // 检查 libraries 和 assets 目录是否存在
-  const libDir = `${gameDir}/libraries`
-  const assetsDir = `${gameDir}/assets`
-  
-  // #ifdef APP-PLUS
-  hasLibraries = await new Promise(resolve => {
-    try {
-      fs.access({ path: libDir, success: () => resolve(true), fail: () => resolve(false) })
-    } catch { resolve(false) }
-  })
-  hasAssets = await new Promise(resolve => {
-    try {
-      fs.access({ path: assetsDir, success: () => resolve(true), fail: () => resolve(false) })
-    } catch { resolve(false) }
-  })
-  // #endif
-  
+
+  if (cfs.isCordova()) {
+    const jarInfo = await cfs.getFileInfo(jarPath)
+    hasJar = jarInfo.exists && jarInfo.isFile
+    const jsonInfo = await cfs.getFileInfo(jsonPath)
+    hasJson = jsonInfo.exists && jsonInfo.isFile
+    const libInfo = await cfs.getFileInfo(`${gameDir}/libraries`)
+    hasLibraries = libInfo.exists && libInfo.isDirectory
+    const assetInfo = await cfs.getFileInfo(`${gameDir}/assets`)
+    hasAssets = assetInfo.exists && assetInfo.isDirectory
+  }
+
   return {
     installed: hasJar && hasJson,
     hasJar,

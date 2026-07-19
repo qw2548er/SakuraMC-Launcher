@@ -49,7 +49,7 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
     `-Xmx${ctx.memory.max}M`,
     ...ctx.jvmArgs,
     `-Dminecraft.launcher.brand=sakuram`,
-    `-Dminecraft.launcher.version=0.5.0`,
+    `-Dminecraft.launcher.version=0.5.1`,
     `-Dfile.encoding=UTF-8`,
     `-Dsun.stdout.encoding=UTF-8`,
     `-Dsun.stderr.encoding=UTF-8`,

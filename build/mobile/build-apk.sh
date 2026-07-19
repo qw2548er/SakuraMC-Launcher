@@ -89,12 +89,12 @@ APK_PATH="platforms/android/app/build/outputs/apk/debug/app-debug.apk"
 if [ -f "$APK_PATH" ]; then
     OUTPUT_DIR="$PROJECT_ROOT/dist"
     mkdir -p "$OUTPUT_DIR"
-    cp "$APK_PATH" "$OUTPUT_DIR/樱花MC启动器-0.1.1-android.apk"
-    
+    cp "$APK_PATH" "$OUTPUT_DIR/SakuraMC-Launcher-v0.5.0-android.apk"
+
     echo ""
     echo "✅ 构建成功!"
-    echo "📂 APK 路径: $OUTPUT_DIR/樱花MC启动器-0.1.1-android.apk"
-    echo "📦 文件大小: $(du -h "$OUTPUT_DIR/樱花MC启动器-0.1.1-android.apk" | cut -f1)"
+    echo "📂 APK 路径: $OUTPUT_DIR/SakuraMC-Launcher-v0.5.0-android.apk"
+    echo "📦 文件大小: $(du -h "$OUTPUT_DIR/SakuraMC-Launcher-v0.5.0-android.apk" | cut -f1)"
 else
     echo "❌ 构建失败, 未找到 APK 文件"
     exit 1

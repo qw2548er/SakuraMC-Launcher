@@ -18,6 +18,7 @@ import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
 import { checkUpdate } from '@/utils/updater'
 import { requestCorePermissions } from '@/utils/permissions'
+import { isCordova } from '@/utils/cordova-fs'
 import type { IAppUpdate } from '@/types'
 
 const accountStore = useAccountStore()
@@ -66,12 +67,12 @@ onMounted(() => {
   if (shouldShowOnboarding()) {
     showOnboarding.value = true
   } else {
-    // #ifdef APP-PLUS
-    // 老用户: 延迟请求权限，避免启动页被弹窗打断
-    setTimeout(() => {
-      requestCorePermissions().catch(() => {})
-    }, 1200)
-    // #endif
+    // Cordova Android 环境: 延迟请求权限, 避免启动页被弹窗打断
+    if (isCordova()) {
+      setTimeout(() => {
+        requestCorePermissions().catch(() => {})
+      }, 1200)
+    }
   }
 })
 
