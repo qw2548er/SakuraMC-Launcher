@@ -119,6 +119,12 @@ public class SakuraMCCorePlugin extends CordovaPlugin {
             case "sha1File":
                 this.sha1File(args.optString(0), callbackContext);
                 return true;
+            case "download":
+                this.download(args.optString(0), args.optString(1), callbackContext);
+                return true;
+            case "extractAssets":
+                this.extractAssets(args.optString(0), args.optString(1), callbackContext);
+                return true;
             default:
                 return false;
         }
@@ -632,6 +638,165 @@ public class SakuraMCCorePlugin extends CordovaPlugin {
                 fCb.success(sb.toString());
             } catch (final Exception e) {
                 cordova.getActivity().runOnUiThread(() -> fCb.error(e.getMessage()));
+            }
+        }).start();
+    }
+
+    private void download(String url, String destPath, CallbackContext callbackContext) {
+        final String fUrl = url;
+        final String fDestPath = destPath;
+        final CallbackContext fCb = callbackContext;
+
+        new Thread(() -> {
+            java.net.HttpURLConnection conn = null;
+            InputStream in = null;
+            OutputStream out = null;
+            try {
+                java.net.URL u = new java.net.URL(fUrl);
+                conn = (java.net.HttpURLConnection) u.openConnection();
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(60000);
+                conn.setRequestProperty("User-Agent", "SakuraMC-Launcher/0.5.4");
+                conn.connect();
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode != java.net.HttpURLConnection.HTTP_OK) {
+                    fCb.error("HTTP Error: " + responseCode);
+                    return;
+                }
+
+                long totalSize = conn.getContentLengthLong();
+                in = conn.getInputStream();
+
+                File destFile = new File(fDestPath);
+                File destDir = destFile.getParentFile();
+                if (destDir != null && !destDir.exists()) {
+                    destDir.mkdirs();
+                }
+
+                out = new FileOutputStream(destFile);
+                byte[] buffer = new byte[8192];
+                int len;
+                long downloaded = 0;
+                long lastNotifyTime = 0;
+
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                    downloaded += len;
+
+                    long now = System.currentTimeMillis();
+                    if (now - lastNotifyTime >= 500 || downloaded == totalSize) {
+                        lastNotifyTime = now;
+                        JSONObject progress = new JSONObject();
+                        try {
+                            progress.put("downloaded", downloaded);
+                            progress.put("total", totalSize);
+                            progress.put("status", "progress");
+                        } catch (JSONException e) {
+                            // ignore
+                        }
+                        PluginResult result = new PluginResult(PluginResult.Status.OK, progress);
+                        result.setKeepCallback(true);
+                        fCb.sendPluginResult(result);
+                    }
+                }
+
+                out.flush();
+                JSONObject result = new JSONObject();
+                try {
+                    result.put("downloaded", downloaded);
+                    result.put("total", totalSize);
+                    result.put("status", "complete");
+                    result.put("path", fDestPath);
+                } catch (JSONException e) {
+                    // ignore
+                }
+                fCb.success(result);
+
+            } catch (java.net.SocketTimeoutException e) {
+                fCb.error("下载超时");
+            } catch (java.io.FileNotFoundException e) {
+                fCb.error("文件不存在: " + fDestPath);
+            } catch (Exception e) {
+                fCb.error(e.getMessage());
+            } finally {
+                try { if (out != null) out.close(); } catch (Exception e) {}
+                try { if (in != null) in.close(); } catch (Exception e) {}
+                try { if (conn != null) conn.disconnect(); } catch (Exception e) {}
+            }
+        }).start();
+    }
+
+    private void extractAssets(String assetsPath, String destDir, CallbackContext callbackContext) {
+        final String fAssetsPath = assetsPath;
+        final String fDestDir = destDir;
+        final CallbackContext fCb = callbackContext;
+
+        new Thread(() -> {
+            try {
+                Context context = cordova.getContext();
+                android.content.res.AssetManager assetManager = context.getAssets();
+                
+                String[] files = assetManager.list(fAssetsPath);
+                if (files == null || files.length == 0) {
+                    fCb.error("Assets directory is empty: " + fAssetsPath);
+                    return;
+                }
+
+                File destDirectory = new File(fDestDir);
+                if (!destDirectory.exists()) {
+                    destDirectory.mkdirs();
+                }
+
+                long totalFiles = files.length;
+                long extracted = 0;
+
+                for (String fileName : files) {
+                    String assetFilePath = fAssetsPath + "/" + fileName;
+                    File destFile = new File(destDirectory, fileName);
+
+                    try {
+                        InputStream in = assetManager.open(assetFilePath);
+                        OutputStream out = new FileOutputStream(destFile);
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, len);
+                        }
+                        in.close();
+                        out.close();
+                        extracted++;
+
+                        JSONObject progress = new JSONObject();
+                        try {
+                            progress.put("extracted", extracted);
+                            progress.put("total", totalFiles);
+                            progress.put("status", "progress");
+                            progress.put("file", fileName);
+                        } catch (JSONException e) {
+                            // ignore
+                        }
+                        PluginResult result = new PluginResult(PluginResult.Status.OK, progress);
+                        result.setKeepCallback(true);
+                        fCb.sendPluginResult(result);
+                    } catch (Exception e) {
+                        Log.w(TAG, "Failed to extract asset: " + fileName, e);
+                    }
+                }
+
+                JSONObject result = new JSONObject();
+                try {
+                    result.put("extracted", extracted);
+                    result.put("total", totalFiles);
+                    result.put("status", "complete");
+                    result.put("destDir", fDestDir);
+                } catch (JSONException e) {
+                    // ignore
+                }
+                fCb.success(result);
+
+            } catch (Exception e) {
+                fCb.error(e.getMessage());
             }
         }).start();
     }

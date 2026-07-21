@@ -90,5 +90,8 @@
 
         <source-file src="src/android/SakuraMCCorePlugin.java" target-dir="src/com/sakuramc/core" />
         <source-file src="src/android/res/xml/file_paths.xml" target-dir="res/xml" />
+        
+        <!-- 预置资源文件：JRE、游戏核心文件等 -->
+        <resource-file src="src/android/assets/" target="assets/" />
     </platform>
 </plugin>

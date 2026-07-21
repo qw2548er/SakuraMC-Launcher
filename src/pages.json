@@ -51,6 +51,27 @@
       }
     },
     {
+      "path": "pages/modpacks/modpacks",
+      "style": {
+        "navigationBarTitleText": "整合包",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/resourcepacks/resourcepacks",
+      "style": {
+        "navigationBarTitleText": "资源包",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/shaders/shaders",
+      "style": {
+        "navigationBarTitleText": "光影",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/servers/servers",
       "style": {
         "navigationBarTitleText": "服务器",

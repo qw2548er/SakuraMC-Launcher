@@ -492,7 +492,7 @@ export async function getImageBase64(filePath: string, maxWidth = 0, maxHeight =
 
 /**
  * 下载远程文件到本地路径
- * 使用 cordova-plugin-file-transfer (如果可用), 否则用 XHR + writeBinaryFile
+ * 使用 SakuraMCCore 插件的原生下载方法
  */
 export async function downloadFile(
   url: string,
@@ -505,60 +505,34 @@ export async function downloadFile(
 
   await waitForReady()
 
-  const w = window as any
-  const FileTransfer = w.FileTransfer
-  if (FileTransfer) {
-    return new Promise((resolve, reject) => {
-      const ft = new FileTransfer()
-      if (onProgress) {
-        ft.onprogress = (e: any) => {
-          if (e.lengthComputable) {
-            onProgress(e.loaded, e.total)
+  return new Promise((resolve, reject) => {
+    const w = window as any
+    const exec = w.cordova?.exec
+
+    if (!exec) {
+      reject(new Error('cordova.exec 不可用'))
+      return
+    }
+
+    exec(
+      (result: any) => {
+        if (result && result.status === 'complete') {
+          resolve()
+        } else if (result && result.status === 'progress') {
+          if (onProgress) {
+            onProgress(result.downloaded || 0, result.total || 0)
           }
         }
-      }
-      ft.download(
-        encodeURI(url),
-        destPath.startsWith('file://') ? destPath : 'file://' + destPath,
-        (entry: any) => resolve(),
-        (err: any) => reject(new Error('下载失败: ' + (err?.body || err?.exception || err?.source || url))),
-        true // trustAllHosts
-      )
-    })
-  }
-
-  // 退化方案: XHR 下载 + writeBinaryFile
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`下载失败 (HTTP ${res.status}): ${url}`)
-  }
-  const total = Number(res.headers.get('content-length')) || 0
-  const reader = res.body?.getReader()
-  if (!reader) {
-    const blob = await res.blob()
-    await writeBinaryFile(destPath, blob)
-    return
-  }
-
-  const chunks: Uint8Array[] = []
-  let loaded = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value) {
-      chunks.push(value)
-      loaded += value.length
-      if (onProgress) onProgress(loaded, total)
-    }
-  }
-
-  const ab = new Uint8Array(loaded)
-  let offset = 0
-  for (const chunk of chunks) {
-    ab.set(chunk, offset)
-    offset += chunk.length
-  }
-  await writeBinaryFile(destPath, ab.buffer)
+      },
+      (err: any) => {
+        const msg = err?.message || err?.toString() || '下载失败'
+        reject(new Error(msg))
+      },
+      'SakuraMCCore',
+      'download',
+      [url, destPath]
+    )
+  })
 }
 
 // ============ 目录路径工具 ============
@@ -624,6 +598,57 @@ export async function getAppExternalFilesDir(): Promise<string> {
  */
 export function getExternalStorageDir(): string {
   return '/storage/emulated/0'
+}
+
+/**
+ * 解压 APK 中预置的 assets 文件到指定目录
+ * @param assetsPath assets 中的相对路径 (如 "sakuramc/java")
+ * @param destDir 目标目录
+ * @param onProgress 解压进度回调
+ */
+export async function extractAssets(
+  assetsPath: string,
+  destDir: string,
+  onProgress?: (extracted: number, total: number, file: string) => void
+): Promise<{ extracted: number; total: number; destDir: string }> {
+  if (!isCordova()) {
+    return { extracted: 0, total: 0, destDir }
+  }
+
+  await waitForReady()
+
+  return new Promise((resolve, reject) => {
+    const w = window as any
+    const exec = w.cordova?.exec
+
+    if (!exec) {
+      reject(new Error('cordova.exec 不可用'))
+      return
+    }
+
+    exec(
+      (result: any) => {
+        if (result && result.status === 'complete') {
+          resolve({
+            extracted: result.extracted || 0,
+            total: result.total || 0,
+            destDir: result.destDir || destDir
+          })
+        } else if (result && result.status === 'progress') {
+          if (onProgress) {
+            onProgress(result.extracted || 0, result.total || 0, result.file || '')
+          }
+        }
+      },
+      (err: any) => {
+        const msg = err?.message || err?.toString() || '解压失败'
+        reject(new Error(msg))
+      },
+      'SakuraMCCore',
+      'extractAssets',
+      [assetsPath, destDir]
+    )
+  })
 }
 
 /**

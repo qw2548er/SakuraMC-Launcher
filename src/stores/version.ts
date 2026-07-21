@@ -3,9 +3,10 @@ import type { IGameVersion, IModLoader, IDownloadTask } from '@/types'
 import { uuid } from '@/utils/format'
 import * as bmcl from '@/api/bmcl'
 import { useSettingsStore } from './settings'
-import { downloadFile, ensureDirectory } from '@/utils/downloader'
+import { downloadFile, ensureDirectory, downloadPlatformInstaller } from '@/utils/downloader'
 import { verifySha1 } from '@/utils/file-chooser'
 import { ensureDir, writeTextFile } from '@/utils/cordova-fs'
+import { installVersion, isVersionInstalled, type InstallStep } from '@/utils/install'
 
 export async function saveJsonToFile(filePath: string, data: any): Promise<void> {
   try {
@@ -33,8 +34,9 @@ interface State {
   downloads: IDownloadTask[]
   modLoaders: Record<string, IModLoader[]>
   loadingLoaders: Record<string, boolean>
-  /** 当前下载任务的 abort 句柄,按 versionId 索引 */
   abortHandles: Record<string, { abort: () => void }>
+  platformInstalling: Record<string, boolean>
+  installSteps: InstallStep[]
 }
 
 export const useVersionStore = defineStore('version', {
@@ -47,7 +49,9 @@ export const useVersionStore = defineStore('version', {
     downloads: [],
     modLoaders: {},
     loadingLoaders: {},
-    abortHandles: {}
+    abortHandles: {},
+    platformInstalling: {},
+    installSteps: []
   }),
   getters: {
     selected(state): IGameVersion | null {
@@ -70,6 +74,21 @@ export const useVersionStore = defineStore('version', {
       const total = active.reduce((a, d) => a + d.total, 0)
       const done = active.reduce((a, d) => a + d.downloaded, 0)
       return total ? Math.floor(done * 100 / total) : 0
+    },
+    forgeVersions(state): (mcVersion: string) => IModLoader[] {
+      return (mcVersion) => state.modLoaders[mcVersion]?.filter(l => l.type === 'forge') || []
+    },
+    fabricVersions(state): (mcVersion: string) => IModLoader[] {
+      return (mcVersion) => state.modLoaders[mcVersion]?.filter(l => l.type === 'fabric') || []
+    },
+    quiltVersions(state): (mcVersion: string) => IModLoader[] {
+      return (mcVersion) => state.modLoaders[mcVersion]?.filter(l => l.type === 'quilt') || []
+    },
+    neoforgeVersions(state): (mcVersion: string) => IModLoader[] {
+      return (mcVersion) => state.modLoaders[mcVersion]?.filter(l => l.type === 'neoforge') || []
+    },
+    optifineVersions(state): (mcVersion: string) => IModLoader[] {
+      return (mcVersion) => state.modLoaders[mcVersion]?.filter(l => l.type === 'optifine') || []
     }
   },
   actions: {
@@ -79,7 +98,6 @@ export const useVersionStore = defineStore('version', {
         if (ins) this.installed = JSON.parse(ins as string)
         const sel = uni.getStorageSync('sakuram.versions.selected.v1')
         if (sel) this.selectedId = sel as string
-        // 如果没有选中版本,但有已安装版本,自动选择第一个
         if (!this.selectedId) {
           const ids = Object.keys(this.installed)
           if (ids.length > 0) this.selectedId = ids[0]
@@ -107,7 +125,6 @@ export const useVersionStore = defineStore('version', {
         }
       } catch (e: any) {
         this.manifestError = e.message
-        // fallback 假数据
         if (!this.manifest) {
           this.manifest = {
             latest: { release: '1.21.4', snapshot: '1.21.4-rc1' },
@@ -149,9 +166,6 @@ export const useVersionStore = defineStore('version', {
     isDownloading(versionId: string): boolean {
       return this.downloads.some(d => d.name.includes(versionId) && d.status === 'downloading')
     },
-    /**
-     * 下载并安装版本 (兼容 versions.vue 调用)
-     */
     async download(versionId: string) {
       if (this.isDownloading(versionId)) {
         uni.showToast({ title: '该版本正在下载中', icon: 'none' })
@@ -234,7 +248,6 @@ export const useVersionStore = defineStore('version', {
           onSuccess: async (path) => {
             console.log('[Download] 下载完成,路径:', path)
             try {
-              // SHA1 完整性校验
               const expectedSha1 = client.sha1
               if (expectedSha1) {
                 this.updateDownload(task.id, { verifying: true })
@@ -276,7 +289,6 @@ export const useVersionStore = defineStore('version', {
           }
         }
         await downloadFile(downloadOpts)
-        // 保存 abort 句柄以便后续取消
         if (downloadOpts._taskHandle) {
           this.abortHandles[versionId] = downloadOpts._taskHandle
         }
@@ -284,6 +296,77 @@ export const useVersionStore = defineStore('version', {
         console.error('[Download] 版本下载异常:', e)
         this.updateDownload(task.id, { status: 'error', error: e.message })
         uni.showToast({ title: '下载失败: ' + (e.message || '未知错误'), icon: 'none', duration: 5000 })
+      }
+    },
+    async installPlatform(mcVersion: string, platformType: 'forge' | 'fabric' | 'quilt' | 'neoforge' | 'optifine', platformVersion: string) {
+      const platformVersionId = `${mcVersion}-${platformType}-${platformVersion}`
+      
+      if (this.platformInstalling[platformVersionId]) {
+        uni.showToast({ title: '该平台正在安装中', icon: 'none' })
+        return
+      }
+      
+      if (this.installed[platformVersionId]) {
+        uni.showToast({ title: '该平台已安装', icon: 'none' })
+        return
+      }
+      
+      this.platformInstalling[platformVersionId] = true
+      
+      try {
+        const settings = useSettingsStore()
+        const gameDir = settings.gameDir || '/storage/emulated/0/SakuraMC/.minecraft'
+        
+        uni.showToast({ title: `开始安装 ${platformType} ${platformVersion}`, icon: 'none', duration: 2000 })
+        
+        const task = this.addDownload({
+          name: `${platformType} ${platformVersion} for ${mcVersion}`,
+          url: '',
+          total: 100,
+          downloaded: 0,
+          status: 'downloading'
+        })
+        
+        await installVersion({
+          versionId: mcVersion,
+          gameDir,
+          source: settings.downloadSource,
+          platformType,
+          platformVersion,
+          onStepChange: (step, steps) => {
+            this.installSteps = steps
+            if (step.id === 'platform_download') {
+              const progress = step.total > 0 ? Math.floor((step.progress / step.total) * 50) : 0
+              this.updateDownload(task.id, { downloaded: progress, total: 100 })
+            } else if (step.status === 'done') {
+              this.updateDownload(task.id, { downloaded: 100, total: 100 })
+            }
+          }
+        })
+        
+        this.updateDownload(task.id, { status: 'completed', downloaded: 100, total: 100 })
+        
+        const baseVersion = this.manifest?.versions.find(v => v.id === mcVersion) || this.installed[mcVersion]
+        
+        if (baseVersion) {
+          this.markInstalled({
+            ...baseVersion,
+            id: platformVersionId,
+            installed: true,
+            installedPath: `${gameDir}/versions/${platformVersionId}`,
+            hasForge: platformType === 'forge',
+            hasFabric: platformType === 'fabric',
+            hasOptifine: platformType === 'optifine'
+          })
+        }
+        
+        uni.showToast({ title: `${platformType} 安装完成`, icon: 'success', duration: 3000 })
+        
+      } catch (e: any) {
+        console.error('[PlatformInstall] 安装失败:', e)
+        uni.showToast({ title: `安装失败: ${e.message}`, icon: 'none', duration: 5000 })
+      } finally {
+        this.platformInstalling[platformVersionId] = false
       }
     },
     async buildDirectDownloadUrl(versionId: string, source: string): Promise<string> {
@@ -329,79 +412,60 @@ export const useVersionStore = defineStore('version', {
       }
       return ''
     },
-
     async cancelDownload(versionId: string) {
-      // 调用 abort 真正取消底层网络请求
       const handle = this.abortHandles[versionId]
       if (handle) {
-        try { handle.abort() } catch (e) { /* 忽略 abort 错误 */ }
+        try { handle.abort() } catch (e) { /* ignore */ }
         delete this.abortHandles[versionId]
       }
       const tasks = this.downloads.filter(d => d.name.includes(versionId) && d.status === 'downloading')
       tasks.forEach(t => { t.status = 'error'; t.error = '已取消' })
       uni.showToast({ title: '已取消下载', icon: 'none' })
     },
-
-    /** 暂停下载 (按 task id) */
     pauseDownload(taskId: string) {
       const task = this.downloads.find(d => d.id === taskId)
       if (!task || task.status !== 'downloading') return
-      // 调用 abort 句柄 (如果可用)
       const versionId = task.name.replace('Minecraft ', '')
       const handle = this.abortHandles[versionId]
       if (handle) {
-        try { handle.abort() } catch (e) { /* 忽略 */ }
-        // 注意: 暂停时不删除 handle, 但实际下载任务已被中止
+        try { handle.abort() } catch (e) { /* ignore */ }
         delete this.abortHandles[versionId]
       }
       task.status = 'paused'
     },
-
-    /** 恢复下载 (重启任务) */
     async resumeDownload(taskId: string) {
       const task = this.downloads.find(d => d.id === taskId)
       if (!task || task.status !== 'paused') return
       const versionId = task.name.replace('Minecraft ', '')
-      // 重新触发下载流程
       task.status = 'pending'
       task.error = undefined
-      // 异步启动新下载任务 (复用 download 方法, 它会检查 isDownloading 状态)
       try {
-        // 先把当前 paused 任务标记为 completed 避免被 isDownloading 拦截
         task.status = 'completed'
         await this.download(versionId)
-        // 移除原 paused 任务 (download 会创建新任务)
         this.removeDownload(taskId)
       } catch (e: any) {
         task.status = 'error'
         task.error = e?.message || '恢复失败'
       }
     },
-
-    /** 取消单个下载任务 (按 id) */
     cancelTask(taskId: string) {
       const task = this.downloads.find(d => d.id === taskId)
       if (!task) return
       const versionId = task.name.replace('Minecraft ', '')
       const handle = this.abortHandles[versionId]
       if (handle) {
-        try { handle.abort() } catch (e) { /* 忽略 */ }
+        try { handle.abort() } catch (e) { /* ignore */ }
         delete this.abortHandles[versionId]
       }
-      // 直接从列表中移除
       this.removeDownload(taskId)
     },
-
-    /** 清除所有失败/已取消的下载 */
     clearFailedDownloads() {
       this.downloads = this.downloads.filter(d => d.status !== 'error')
     },
-
     uninstall(id: string) {
       this.markUninstalled(id)
       uni.showToast({ title: '已删除版本', icon: 'success' })
     },
-
     async loadModLoaders(mcVersion: string) {
       this.loadingLoaders[mcVersion] = true
       try {
@@ -434,6 +498,12 @@ export const useVersionStore = defineStore('version', {
       } finally {
         this.loadingLoaders[mcVersion] = false
       }
+    },
+    async checkVersionInstalled(versionId: string): Promise<boolean> {
+      const settings = useSettingsStore()
+      const gameDir = settings.gameDir || '/storage/emulated/0/SakuraMC/.minecraft'
+      const info = await isVersionInstalled(versionId, gameDir)
+      return info.installed
     }
   }
 })

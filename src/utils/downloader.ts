@@ -1,8 +1,5 @@
-/**
- * 通用下载工具 (uni.downloadFile 实现,跨平台兼容)
- */
 import { formatSpeed } from './format'
-import { isCordova } from './cordova-fs'
+import { isCordova, waitForReady } from './cordova-fs'
 
 export interface DownloadOptions {
   url: string
@@ -12,8 +9,13 @@ export interface DownloadOptions {
   onError?: (err: Error) => void
   headers?: Record<string, string>
   timeout?: number
-  /** 返回的 task 句柄,可用于 abort() 取消下载 */
   _taskHandle?: { abort: () => void }
+}
+
+export interface PlatformDownloadOptions extends DownloadOptions {
+  platformType?: 'forge' | 'fabric' | 'quilt' | 'neoforge' | 'optifine' | 'iris'
+  mcVersion?: string
+  platformVersion?: string
 }
 
 export async function downloadFile(opts: DownloadOptions): Promise<string> {
@@ -29,24 +31,18 @@ export async function downloadFile(opts: DownloadOptions): Promise<string> {
   return appDownload(opts)
   // #endif
 
-  // #ifdef H5
-  return h5Download(opts)
-  // #endif
-
   // #ifdef ELECTRON
   return electronDownload(opts)
   // #endif
 
-  return h5Download(opts)
+  throw new Error('当前环境不支持下载, 请安装 Android APK 后重试')
 }
 
-/** 异步调用 onSuccess 回调,确保 Promise 被正确 await */
 async function callOnSuccess(opts: DownloadOptions, filePath: string): Promise<void> {
   if (opts.onSuccess) {
     try {
       await opts.onSuccess(filePath)
     } catch (e) {
-      // 回调内的错误不影响主流程,但需要报告
       console.warn('[downloader] onSuccess 回调执行出错:', e)
     }
   }
@@ -54,7 +50,7 @@ async function callOnSuccess(opts: DownloadOptions, filePath: string): Promise<v
 
 async function cordovaDownload(opts: DownloadOptions): Promise<string> {
   const { downloadFile: cordovaFsDownload } = await import('./cordova-fs')
-  
+
   return new Promise((resolve, reject) => {
     let lastTime = Date.now()
     let lastLoaded = 0
@@ -139,7 +135,6 @@ function appDownload(opts: DownloadOptions): Promise<string> {
       }
     })
 
-    // 暴露 abort 句柄供外部取消
     if (task && typeof task.abort === 'function') {
       opts._taskHandle = { abort: () => task.abort() }
     }
@@ -166,7 +161,7 @@ async function copyFileToExternalStorage(srcPath: string, destPath: string): Pro
   return new Promise((resolve, reject) => {
     const fileSystem = plus.io.getFileSystemManager()
     const destDir = destPath.substring(0, destPath.lastIndexOf('/'))
-    
+
     fileSystem.access({
       path: destDir,
       success: () => {
@@ -194,100 +189,6 @@ async function copyFileToExternalStorage(srcPath: string, destPath: string): Pro
       }
     })
   })
-}
-
-function h5Download(opts: DownloadOptions): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let lastTime = Date.now()
-    let lastLoaded = 0
-    let settled = false
-
-    const task = uni.downloadFile({
-      url: opts.url,
-      timeout: opts.timeout || 600000,
-      success: async (res: any) => {
-        if (settled) return
-        settled = true
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          const filePath = res.tempFilePath || ''
-          await callOnSuccess(opts, filePath)
-          resolve(filePath)
-        } else {
-          fallbackOpenUrl(opts.url, resolve, reject, opts)
-        }
-      },
-      fail: (err: any) => {
-        if (settled) return
-        settled = true
-        fallbackOpenUrl(opts.url, resolve, reject, opts)
-      }
-    })
-
-    // 暴露 abort 句柄供外部取消
-    if (task && typeof task.abort === 'function') {
-      opts._taskHandle = { abort: () => task.abort() }
-    }
-
-    if (task && task.onProgressUpdate && opts.onProgress) {
-      task.onProgressUpdate((res: any) => {
-        const now = Date.now()
-        const dt = (now - lastTime) / 1000
-        const dl = res.totalBytesWritten - lastLoaded
-        const speed = dt > 0 ? dl / dt : 0
-        lastTime = now
-        lastLoaded = res.totalBytesWritten
-        opts.onProgress?.(
-          res.totalBytesWritten,
-          res.totalBytesExpectedToWrite || 0,
-          speed
-        )
-      })
-    }
-  })
-}
-
-async function fallbackOpenUrl(
-  url: string,
-  resolve: (v: string) => void,
-  reject: (e: Error) => void,
-  opts: DownloadOptions
-) {
-  const filename = opts.savePath || url.split('/').pop() || 'download'
-  // #ifdef H5
-  try {
-    if (typeof document === 'undefined') throw new Error('no DOM')
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.target = '_blank'
-    a.rel = 'noopener'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    await callOnSuccess(opts, filename)
-    resolve(filename)
-    return
-  } catch (e: any) {
-    try {
-      if (typeof window !== 'undefined' && window.open) {
-        window.open(url, '_blank')
-        await callOnSuccess(opts, '')
-        resolve('')
-        return
-      }
-    } catch { /* fall through to error */ }
-    const err = new Error('下载失败: ' + (e?.message || '无法打开下载链接'))
-    opts.onError?.(err)
-    reject(err)
-    return
-  }
-  // #endif
-  // #ifndef H5
-  // 非 H5 环境(小程序等)没有 DOM, 直接报错
-  const err = new Error('下载失败: 当前环境不支持下载')
-  opts.onError?.(err)
-  reject(err)
-  // #endif
 }
 
 function electronDownload(opts: DownloadOptions): Promise<string> {
@@ -328,7 +229,6 @@ function electronDownload(opts: DownloadOptions): Promise<string> {
       }
     })
 
-    // 暴露 abort 句柄供外部取消
     if (task && typeof task.abort === 'function') {
       opts._taskHandle = { abort: () => task.abort() }
     }
@@ -378,8 +278,13 @@ export async function batchDownload(
 }
 
 export async function ensureDirectory(dirPath: string): Promise<void> {
+  if (isCordova()) {
+    const { ensureDir } = await import('./cordova-fs')
+    await ensureDir(dirPath)
+    return
+  }
+  // #ifdef APP-PLUS
   return new Promise((resolve, reject) => {
-    // #ifdef APP-PLUS
     const fileSystem = plus.io.getFileSystemManager()
     fileSystem.access({
       path: dirPath,
@@ -393,9 +298,31 @@ export async function ensureDirectory(dirPath: string): Promise<void> {
         })
       }
     })
-    // #endif
-    // #ifndef APP-PLUS
-    resolve()
-    // #endif
   })
+  // #endif
+  // #ifndef APP-PLUS
+  resolve()
+  // #endif
+}
+
+export async function downloadPlatformInstaller(opts: PlatformDownloadOptions): Promise<string> {
+  await waitForReady()
+  
+  const { savePath, url, mcVersion, platformType, platformVersion, ...rest } = opts
+  const finalOpts: DownloadOptions = {
+    url: url!,
+    savePath: savePath!,
+    ...rest
+  }
+  
+  console.log(`[PlatformDownload] 开始下载 ${platformType} ${platformVersion} for MC ${mcVersion}`)
+  
+  try {
+    const result = await downloadFile(finalOpts)
+    console.log(`[PlatformDownload] 下载完成: ${result}`)
+    return result
+  } catch (e: any) {
+    console.error(`[PlatformDownload] 下载失败: ${e.message}`)
+    throw new Error(`下载 ${platformType} 失败: ${e.message}`)
+  }
 }

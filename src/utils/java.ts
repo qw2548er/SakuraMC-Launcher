@@ -2,11 +2,23 @@
  * Java 运行时检测与下载
  */
 
+import { isCordova, waitForReady } from './cordova-fs'
+import * as cfs from './cordova-fs'
+import { downloadFile } from './downloader'
+
 export interface JvmInfo {
   version: number  // e.g. 8, 11, 17, 21
   vendor: 'adoptium' | 'azul' | 'oracle' | 'microsoft' | 'bellsoft'
   path: string
   bit: 32 | 64
+}
+
+export interface JavaDownloadOptions {
+  version: number
+  platform?: 'linux' | 'windows' | 'macos'
+  arch?: 'amd64' | 'arm64'
+  savePath?: string
+  onProgress?: (downloaded: number, total: number, speed: number) => void
 }
 
 /**
@@ -129,5 +141,63 @@ export function buildJvmMemoryConfig(min: number, max: number) {
     min: Math.max(512, Math.min(min, max - 512)),
     max: Math.max(1024, max),
     recommended: { min: 1024, max: 2048 }
+  }
+}
+
+export async function downloadJavaRuntime(opts: JavaDownloadOptions): Promise<string> {
+  const { version, platform = 'linux', arch = 'arm64', savePath, onProgress } = opts
+
+  if (!isCordova()) {
+    throw new Error('H5 网页版无法下载 Java, 请安装 Android APK 后重试')
+  }
+
+  await waitForReady()
+
+  const javaDir = `${(await cfs.getAppExternalFilesDir())}/java`
+  const fileName = `jre${version}-${platform}-${arch}.tar.gz`
+  const finalSavePath = savePath || `${javaDir}/${fileName}`
+  const assetsPath = `sakuramc/java/${fileName}`
+
+  await cfs.ensureDir(javaDir)
+
+  const fileExists = await cfs.fileExists(finalSavePath)
+  if (!fileExists) {
+    const extracted = await extractFromAssets(assetsPath, javaDir, onProgress)
+    if (extracted) {
+      console.log(`[JavaDownload] JRE ${version} 从 APK 预置文件解压完成`)
+      return finalSavePath
+    }
+  } else {
+    console.log(`[JavaDownload] JRE ${version} 已存在, 跳过下载`)
+    return finalSavePath
+  }
+
+  const downloadUrl = await getAdoptiumDownloadUrl(version, platform, arch)
+  
+  console.log(`[JavaDownload] 开始下载 JRE ${version}: ${downloadUrl}`)
+
+  const result = await downloadFile({
+    url: downloadUrl,
+    savePath: finalSavePath,
+    onProgress
+  })
+
+  console.log(`[JavaDownload] JRE ${version} 下载完成: ${result}`)
+
+  return result
+}
+
+async function extractFromAssets(assetsPath: string, destDir: string, onProgress?: (downloaded: number, total: number, speed: number) => void): Promise<boolean> {
+  try {
+    console.log(`[JavaDownload] 尝试从 APK 预置文件解压: ${assetsPath}`)
+    const result = await cfs.extractAssets(assetsPath, destDir, (extracted, total, file) => {
+      if (onProgress && total > 0) {
+        onProgress(extracted * 1024, total * 1024, 0)
+      }
+    })
+    return result.extracted > 0
+  } catch (e) {
+    console.warn('[JavaDownload] 从 APK 预置文件解压失败:', e)
+    return false
   }
 }
