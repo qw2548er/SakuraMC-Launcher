@@ -14,7 +14,7 @@ import {
 import { MINECRAFT_DIR, ensureDir } from '@/utils/setup'
 import { formatBytes, copyText } from '@/utils/format'
 import { APP_VERSION } from '@/utils/updater'
-import { isCordova, waitForReady, unzipFile, fileExists as cfsFileExists, listZip } from '@/utils/cordova-fs'
+import { isCordova, waitForReady, unzipFile, fileExists as cfsFileExists, listZip, checkManageExternalStorage, requestManageExternalStorage } from '@/utils/cordova-fs'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -171,8 +171,26 @@ async function startLaunch() {
     appendToTerminal(`游戏目录: ${gameDir}`)
     appendToTerminal('')
     
-    // ===== Step 1: 检查资源文件完整性 =====
+    // ===== 检查存储权限 =====
     setStepStatus('check', 'running')
+    appendToTerminal('[权限] 检查存储权限...')
+    
+    if (isCordova()) {
+      try {
+        const hasPermission = await checkManageExternalStorage()
+        if (!hasPermission) {
+          appendToTerminal('  - 需要存储权限')
+          await requestManageExternalStorage()
+          appendToTerminal('  - 权限已获取')
+        } else {
+          appendToTerminal('  - 权限已就绪')
+        }
+      } catch (e: any) {
+        appendToTerminal(`  - [警告] 权限检查失败: ${e?.message || e}`)
+      }
+    }
+    
+    // ===== Step 1: 检查资源文件完整性 =====
     appendToTerminal('[1/6] 检查资源文件完整性...')
     
     const installed = await isVersionInstalled(version.id, gameDir)

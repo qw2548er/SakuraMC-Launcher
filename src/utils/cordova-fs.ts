@@ -221,6 +221,28 @@ export async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
+ * 检查是否有 MANAGE_EXTERNAL_STORAGE 权限
+ */
+export async function checkManageExternalStorage(): Promise<boolean> {
+  if (!isCordova()) {
+    return true
+  }
+  const result = await coreExec<number>('checkManageExternalStorage', [])
+  return result === 1
+}
+
+/**
+ * 请求 MANAGE_EXTERNAL_STORAGE 权限
+ */
+export async function requestManageExternalStorage(): Promise<boolean> {
+  if (!isCordova()) {
+    return true
+  }
+  const result = await coreExec<number>('requestManageExternalStorage', [])
+  return result === 1
+}
+
+/**
  * 写入文本文件
  * 由于 SakuraMCCore 插件没有 writeFile, 使用 cordova-plugin-file
  */

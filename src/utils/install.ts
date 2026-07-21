@@ -878,14 +878,30 @@ export async function isVersionInstalled(versionId: string, gameDir: string = MI
   let hasAssets = false
 
   if (cfs.isCordova()) {
-    const jarInfo = await cfs.getFileInfo(jarPath)
-    hasJar = jarInfo.exists && jarInfo.isFile
-    const jsonInfo = await cfs.getFileInfo(jsonPath)
-    hasJson = jsonInfo.exists && jsonInfo.isFile
-    const libInfo = await cfs.getFileInfo(`${gameDir}/libraries`)
-    hasLibraries = libInfo.exists && libInfo.isDirectory
-    const assetInfo = await cfs.getFileInfo(`${gameDir}/assets`)
-    hasAssets = assetInfo.exists && assetInfo.isDirectory
+    try {
+      const jarInfo = await cfs.getFileInfo(jarPath)
+      hasJar = jarInfo.exists && jarInfo.isFile
+    } catch {
+      hasJar = false
+    }
+    try {
+      const jsonInfo = await cfs.getFileInfo(jsonPath)
+      hasJson = jsonInfo.exists && jsonInfo.isFile
+    } catch {
+      hasJson = false
+    }
+    try {
+      const libInfo = await cfs.getFileInfo(`${gameDir}/libraries`)
+      hasLibraries = libInfo.exists && libInfo.isDirectory
+    } catch {
+      hasLibraries = false
+    }
+    try {
+      const assetInfo = await cfs.getFileInfo(`${gameDir}/assets`)
+      hasAssets = assetInfo.exists && assetInfo.isDirectory
+    } catch {
+      hasAssets = false
+    }
   }
 
   return {
