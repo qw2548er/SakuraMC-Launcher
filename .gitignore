@@ -1,0 +1,33 @@
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Log/OS Files
+*.log
+
+# Android Studio generated files and folders
+captures/
+.externalNativeBuild/
+.cxx/
+release
+*.apk
+output.json
+android-ndk-r26d/
+
+# IntelliJ
+*.iml
+.idea/
+.trae/
+
+# Google Services (e.g. APIs or Firebase)
+google-services.json
+
+# Android Profiling
+*.hprof
+FCL/src/main/java/com/mio/Main.kt
+.DS_Store
+/LWJGL-Pojav/bin
+LWJGL-Pojav/compileOnly/jspecify-1.0.0.jar
