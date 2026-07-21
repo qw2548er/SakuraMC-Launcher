@@ -67,40 +67,39 @@ export function waitForReady(timeout = 45000): Promise<void> {
     }
 
     const w = window as any
-    const timer = setTimeout(() => {
+    let timer: any = null
+    let poll: any = null
+
+    const checkAndResolve = () => {
       if (w.cordova && typeof w.cordova.exec === 'function') {
-        console.warn('[CordovaFS] deviceready 超时, 但 cordova.exec 可用, 继续执行')
+        if (poll) clearInterval(poll)
+        if (timer) clearTimeout(timer)
         _deviceReady = true
         resolve()
-      } else {
-        _deviceReadyPromise = null
-        reject(new Error('Cordova 初始化超时 (cordova.exec 不可用)'))
+        return true
+      }
+      return false
+    }
+
+    if (checkAndResolve()) return
+
+    timer = setTimeout(() => {
+      if (!checkAndResolve()) {
+        console.warn('[CordovaFS] deviceready 超时, 继续轮询等待 cordova.exec')
       }
     }, timeout)
 
     const onReady = () => {
-      clearTimeout(timer)
+      if (poll) clearInterval(poll)
+      if (timer) clearTimeout(timer)
       _deviceReady = true
       resolve()
     }
 
     document.addEventListener('deviceready', onReady, { once: true } as any)
 
-    let checks = 0
-    const maxChecks = Math.floor(timeout / 300)
-    const poll = setInterval(() => {
-      checks++
-      if (w.cordova && typeof w.cordova.exec === 'function') {
-        console.warn('[CordovaFS] 轮询检测到 cordova.exec 可用, 提前 resolve')
-        clearInterval(poll)
-        clearTimeout(timer)
-        _deviceReady = true
-        resolve()
-        return
-      }
-      if (checks > maxChecks) {
-        clearInterval(poll)
-      }
+    poll = setInterval(() => {
+      checkAndResolve()
     }, 300)
   })
 
