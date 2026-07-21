@@ -63,6 +63,42 @@ function getProgress(task: any): number {
   return Math.floor(task.downloaded * 100 / task.total)
 }
 
+function getRemainingTime(task: any): string {
+  if (!task.speed || !task.total || task.status !== 'downloading') return '--'
+  const remaining = task.total - task.downloaded
+  if (remaining <= 0) return '即将完成'
+  const seconds = Math.floor(remaining / task.speed)
+  if (seconds < 60) return `${seconds}秒`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`
+  return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分钟`
+}
+
+function copyDownloadUrl(task: any) {
+  if (!task.url) {
+    uni.showToast({ title: '无下载链接', icon: 'none' })
+    return
+  }
+  uni.setClipboardData({
+    data: task.url,
+    success: () => uni.showToast({ title: '链接已复制', icon: 'success' })
+  })
+}
+
+function showDownloadInfo(task: any) {
+  uni.showModal({
+    title: '下载信息',
+    content: `文件名: ${task.name}\n文件大小: ${formatBytes(task.total)}\n下载进度: ${getProgress(task)}%\n下载速度: ${task.speed ? formatSpeed(task.speed) : '--'}\n预计剩余: ${getRemainingTime(task)}\n状态: ${getStatusLabel(task)}`,
+    showCancel: true,
+    cancelText: '关闭',
+    confirmText: '复制链接',
+    success: (res) => {
+      if (res.confirm) {
+        copyDownloadUrl(task)
+      }
+    }
+  })
+}
+
 function pauseTask(task: any) {
   versionStore.pauseDownload(task.id)
   uni.showToast({ title: '已暂停', icon: 'none' })
@@ -241,7 +277,8 @@ onUnmounted(() => {
 
         <view class="task-card__meta">
           <text>{{ formatBytes(task.downloaded) }} / {{ task.total ? formatBytes(task.total) : '未知' }}</text>
-          <text v-if="task.speed && task.status === 'downloading'">{{ formatSpeed(task.speed) }}</text>
+          <text v-if="task.speed && task.status === 'downloading'" class="meta-item">{{ formatSpeed(task.speed) }}</text>
+          <text v-if="task.status === 'downloading'" class="meta-item">⏱ {{ getRemainingTime(task) }}</text>
           <text v-if="task.error" class="task-card__error">{{ task.error }}</text>
         </view>
 
@@ -280,6 +317,13 @@ onUnmounted(() => {
             @tap="versionStore.removeDownload(task.id)"
           >
             <text>🗑 移除</text>
+          </view>
+          <view
+            v-if="task.url"
+            class="task-btn task-btn--info"
+            @tap="showDownloadInfo(task)"
+          >
+            <text>ℹ 详情</text>
           </view>
         </view>
       </view>
@@ -505,7 +549,7 @@ onUnmounted(() => {
     }
   }
 
-  &__meta {
+  .task-card__meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -513,6 +557,12 @@ onUnmounted(() => {
     color: rgba(255, 255, 255, 0.5);
     margin-bottom: 12rpx;
     gap: 12rpx;
+    flex-wrap: wrap;
+  }
+
+  .meta-item {
+    color: #ffb7d5;
+    font-weight: 500;
   }
 
   &__error {
@@ -547,9 +597,14 @@ onUnmounted(() => {
     font-weight: 600;
   }
 
-  &--danger {
+  .task-btn--danger {
     background: rgba(255, 107, 107, 0.15);
     color: #ff6b6b;
+  }
+
+  .task-btn--info {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
   }
 
   &:active {

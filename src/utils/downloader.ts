@@ -2,6 +2,7 @@
  * 通用下载工具 (uni.downloadFile 实现,跨平台兼容)
  */
 import { formatSpeed } from './format'
+import { isCordova } from './cordova-fs'
 
 export interface DownloadOptions {
   url: string
@@ -18,6 +19,10 @@ export interface DownloadOptions {
 export async function downloadFile(opts: DownloadOptions): Promise<string> {
   if (!opts.url) {
     throw new Error('下载地址为空')
+  }
+
+  if (isCordova()) {
+    return cordovaDownload(opts)
   }
 
   // #ifdef APP-PLUS
@@ -45,6 +50,43 @@ async function callOnSuccess(opts: DownloadOptions, filePath: string): Promise<v
       console.warn('[downloader] onSuccess 回调执行出错:', e)
     }
   }
+}
+
+async function cordovaDownload(opts: DownloadOptions): Promise<string> {
+  const { downloadFile: cordovaFsDownload } = await import('./cordova-fs')
+  
+  return new Promise((resolve, reject) => {
+    let lastTime = Date.now()
+    let lastLoaded = 0
+
+    const onProgress = (loaded: number, total: number) => {
+      const now = Date.now()
+      const dt = (now - lastTime) / 1000
+      const dl = loaded - lastLoaded
+      const speed = dt > 0 ? dl / dt : 0
+      lastTime = now
+      lastLoaded = loaded
+      opts.onProgress?.(loaded, total, speed)
+    }
+
+    const savePath = opts.savePath
+    if (!savePath) {
+      reject(new Error('Cordova 环境需要指定 savePath'))
+      return
+    }
+
+    cordovaFsDownload(opts.url, savePath, onProgress)
+      .then(async () => {
+        await callOnSuccess(opts, savePath)
+        resolve(savePath)
+      })
+      .catch((e: any) => {
+        const msg = e?.message || e?.toString() || '下载失败'
+        const err = new Error(msg)
+        opts.onError?.(err)
+        reject(err)
+      })
+  })
 }
 
 function appDownload(opts: DownloadOptions): Promise<string> {
