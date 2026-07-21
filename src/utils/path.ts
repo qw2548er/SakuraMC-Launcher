@@ -1,7 +1,7 @@
 import { detectPlatform } from './format'
 import { isCordova, getAppExternalFilesDir } from './cordova-fs'
 
-const FALLBACK_ANDROID_DIR = '/storage/emulated/0/Android/data/com.sakuramc.launcher/files'
+const FALLBACK_ANDROID_DIR = '/storage/emulated/0'
 
 let _cachedGameDir: string | null = null
 let _cachedLauncherDir: string | null = null
@@ -64,17 +64,7 @@ export async function getDefaultGameDir(): Promise<string> {
     }
   } catch (e) { /* 忽略 */ }
 
-  try {
-    const extDir = await getAppExternalFilesDir()
-    if (extDir) {
-      _cachedGameDir = extDir + '/SakuraMC/.minecraft'
-      return _cachedGameDir
-    }
-  } catch {
-    // 忽略, 走 fallback
-  }
-
-  _cachedGameDir = getDefaultGameDirSync()
+  _cachedGameDir = '/storage/emulated/0/SakuraMC/.minecraft'
   return _cachedGameDir
 }
 
@@ -94,17 +84,7 @@ export async function getDefaultLauncherDir(): Promise<string> {
     }
   } catch (e) { /* 忽略 */ }
 
-  try {
-    const extDir = await getAppExternalFilesDir()
-    if (extDir) {
-      _cachedLauncherDir = extDir + '/SakuraMC'
-      return _cachedLauncherDir
-    }
-  } catch {
-    // 忽略, 走 fallback
-  }
-
-  _cachedLauncherDir = getDefaultLauncherDirSync()
+  _cachedLauncherDir = '/storage/emulated/0/SakuraMC'
   return _cachedLauncherDir
 }
 

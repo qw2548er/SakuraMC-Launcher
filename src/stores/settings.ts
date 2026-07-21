@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import type { ISettings } from '@/types'
 import type { DownloadSource } from '@/api/bmcl'
 import { detectPlatform } from '@/utils/format'
-import { isCordova, getAppExternalFilesDir } from '@/utils/cordova-fs'
+import { isCordova } from '@/utils/cordova-fs'
 import { getDefaultGameDirSync, getDefaultLauncherDirSync } from '@/utils/path'
 
 const STORAGE_KEY = 'sakuram.settings.v1'
@@ -73,17 +73,15 @@ export const useSettingsStore = defineStore('settings', {
     async initAsync() {
       if (!isCordova()) return
       try {
-        const extDir = await getAppExternalFilesDir()
-        if (!extDir) return
-        const baseGameDir = `${extDir}/SakuraMC/.minecraft`
+        const baseGameDir = '/storage/emulated/0/SakuraMC/.minecraft'
         const stored = uni.getStorageSync(STORAGE_KEY)
         if (stored) {
           const parsed = JSON.parse(stored as string)
-          if (parsed.gameDir && !parsed.gameDir.includes(extDir)) {
+          if (parsed.gameDir && !parsed.gameDir.includes('/storage/emulated/0/SakuraMC')) {
             return
           }
         }
-        if (!this.gameDir || !this.gameDir.includes(extDir)) {
+        if (!this.gameDir || !this.gameDir.includes('/storage/emulated/0/SakuraMC')) {
           this.gameDir = baseGameDir
           this.versionsDir = `${baseGameDir}/versions`
           this.modsDir = `${baseGameDir}/mods`

@@ -153,7 +153,7 @@ export async function downloadJavaRuntime(opts: JavaDownloadOptions): Promise<st
 
   await waitForReady()
 
-  const javaDir = `${(await cfs.getAppExternalFilesDir())}/java`
+  const javaDir = '/storage/emulated/0/SakuraMC/java'
   const fileName = `jre${version}-${platform}-${arch}.tar.gz`
   const finalSavePath = savePath || `${javaDir}/${fileName}`
   const assetsPath = `sakuramc/java/${fileName}`
