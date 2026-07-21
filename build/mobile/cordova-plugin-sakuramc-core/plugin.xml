@@ -11,6 +11,11 @@
         <engine name="cordova" version=">=10.0.0" />
     </engines>
 
+    <!-- JS 桥接模块: 注册到 cordova.plugins.SakuraMCCore -->
+    <js-module src="www/sakuramc-core.js" name="SakuraMCCore">
+        <clobbers target="cordova.plugins.SakuraMCCore" />
+    </js-module>
+
     <platform name="android">
         <config-file target="config.xml" parent="/*">
             <feature name="SakuraMCCore">

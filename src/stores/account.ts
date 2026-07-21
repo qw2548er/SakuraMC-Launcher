@@ -194,16 +194,22 @@ export const useAccountStore = defineStore('account', {
         const result = await mojang.microsoftLogin(t.access_token)
         if (!result?.tokens?.mcAccessToken) return false
         acc.accessToken = result.tokens.mcAccessToken
-        acc.refreshToken = t.refresh_token
+        // 保留旧 refreshToken 防止微软未返回新 token 时被覆盖为 undefined
+        acc.refreshToken = t.refresh_token || acc.refreshToken
         acc.expiresAt = result.tokens.expiresAt
         this.persist()
         return true
       } catch (e: any) {
         console.warn('[Account] refresh failed:', e?.message || e)
-        // refresh_token 失效或被吊销: 清空 token 标记, 但保留账号信息
-        if (/invalid_grant|invalid_request|invalid_client/i.test(e?.message || '')) {
+        const msg = e?.message || ''
+        // refresh_token 失效或被吊销: 清空所有 token, 标记需要重新登录
+        if (/invalid_grant|invalid_request|invalid_client/i.test(msg)) {
           acc.accessToken = undefined
           acc.expiresAt = undefined
+          // 关键修复: 同步清空 refreshToken, 避免下次启动又用失效的 token 刷新形成死循环
+          acc.refreshToken = undefined
+          // 标记需要重新登录 (前端可据此弹出引导)
+          ;(acc as any).needRelogin = true
           this.persist()
         }
         return false

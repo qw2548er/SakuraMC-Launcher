@@ -5,39 +5,17 @@ import * as bmcl from '@/api/bmcl'
 import { useSettingsStore } from './settings'
 import { downloadFile, ensureDirectory } from '@/utils/downloader'
 import { verifySha1 } from '@/utils/file-chooser'
+import { ensureDir, writeTextFile } from '@/utils/cordova-fs'
 
 export async function saveJsonToFile(filePath: string, data: any): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // #ifdef APP-PLUS
-    const fileSystem = plus.io.getFileSystemManager()
+  try {
     const dir = filePath.substring(0, filePath.lastIndexOf('/'))
-    fileSystem.access({
-      path: dir,
-      success: () => writeFile(),
-      fail: () => {
-        fileSystem.mkdir({
-          dirPath: dir,
-          recursive: true,
-          success: writeFile,
-          fail: (e: any) => reject(new Error(`创建目录失败: ${e.message}`))
-        })
-      }
-    })
-    
-    function writeFile() {
-      fileSystem.writeFile({
-        filePath,
-        data: JSON.stringify(data, null, 2),
-        encoding: 'utf-8',
-        success: () => resolve(),
-        fail: (e: any) => reject(new Error(`写入文件失败: ${e.message}`))
-      })
-    }
-    // #endif
-    // #ifndef APP-PLUS
-    resolve()
-    // #endif
-  })
+    await ensureDir(dir)
+    await writeTextFile(filePath, JSON.stringify(data, null, 2))
+  } catch (e: any) {
+    console.warn('[Version] saveJsonToFile 失败:', e?.message || e)
+    throw e
+  }
 }
 
 const STORAGE_KEY = 'sakuram.versions.v1'

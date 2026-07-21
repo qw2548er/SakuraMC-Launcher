@@ -54,7 +54,6 @@ interface CordovaFileOps {
 }
 
 function getPlugin(): CordovaFileOps | null {
-  // #ifdef APP-PLUS
   try {
     const w = window as any
     if (w.cordova && w.cordova.plugins && w.cordova.plugins.SakuraMCCore) {
@@ -63,18 +62,27 @@ function getPlugin(): CordovaFileOps | null {
   } catch (e) {
     console.warn('[FileOps] getPlugin failed', e)
   }
-  // #endif
   return null
 }
 
-function exec<T>(action: string, args: any[] = []): Promise<T> {
+async function exec<T>(action: string, args: any[] = []): Promise<T> {
+  const { waitForReady } = await import('./cordova-fs')
+  await waitForReady().catch(() => {})
   return new Promise((resolve, reject) => {
+    const w = window as any
+    // 优先使用已注册的 JS 模块
     const plugin = getPlugin()
-    if (!plugin) {
-      reject(new Error('SakuraMCCore plugin not available'))
+    if (plugin && typeof (plugin as any)[action] === 'function') {
+      ;(plugin as any)[action](...args, resolve, reject)
       return
     }
-    ;(plugin as any)[action](...(args as any[]), resolve, reject)
+    // 回退: 直接通过 cordova.exec 调用
+    const execFn = w.cordova?.exec
+    if (execFn) {
+      execFn(resolve, reject, 'SakuraMCCore', action, args)
+      return
+    }
+    reject(new Error('SakuraMCCore plugin not available (无 JS 模块且 cordova.exec 不存在)'))
   })
 }
 

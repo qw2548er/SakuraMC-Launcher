@@ -18,7 +18,7 @@ import { buildLaunchCommand, buildSingleLine, buildBatchScript, buildShellScript
 import { copyText, downloadFile, formatBytes, relativeTime } from '@/utils/format'
 import { checkUpdate } from '@/utils/updater'
 import { requestCorePermissions } from '@/utils/permissions'
-import { isCordova } from '@/utils/cordova-fs'
+import { isCordova, waitForReady } from '@/utils/cordova-fs'
 import type { IAppUpdate } from '@/types'
 
 const accountStore = useAccountStore()
@@ -63,14 +63,15 @@ onShow(() => {
 })
 
 onMounted(() => {
-  // 首次启动引导 (优先于权限请求, 避免弹窗冲突)
   if (shouldShowOnboarding()) {
     showOnboarding.value = true
   } else {
-    // Cordova Android 环境: 延迟请求权限, 避免启动页被弹窗打断
     if (isCordova()) {
       setTimeout(() => {
-        requestCorePermissions().catch(() => {})
+        waitForReady().then(() => {
+          settingsStore.initAsync()
+          requestCorePermissions().catch(() => {})
+        }).catch(() => {})
       }, 1200)
     }
   }

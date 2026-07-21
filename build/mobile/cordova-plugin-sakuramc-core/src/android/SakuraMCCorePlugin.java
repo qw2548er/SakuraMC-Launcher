@@ -80,6 +80,12 @@ public class SakuraMCCorePlugin extends CordovaPlugin {
             case "getPlatformInfo":
                 this.getPlatformInfo(callbackContext);
                 return true;
+            case "getAppFilesDir":
+                this.getAppFilesDir(callbackContext);
+                return true;
+            case "getAppExternalFilesDir":
+                this.getAppExternalFilesDir(callbackContext);
+                return true;
             case "openExternalFileManager":
                 this.openExternalFileManager(args.optString(0), callbackContext);
                 return true;
@@ -126,6 +132,30 @@ public class SakuraMCCorePlugin extends CordovaPlugin {
             info.put("packageName", cordova.getActivity().getPackageName());
             callbackContext.success(info);
         } catch (JSONException e) {
+            callbackContext.error(e.getMessage());
+        }
+    }
+
+    private void getAppFilesDir(CallbackContext callbackContext) {
+        try {
+            Context context = cordova.getContext();
+            File dir = context.getFilesDir();
+            callbackContext.success(dir.getAbsolutePath());
+        } catch (Exception e) {
+            callbackContext.error(e.getMessage());
+        }
+    }
+
+    private void getAppExternalFilesDir(CallbackContext callbackContext) {
+        try {
+            Context context = cordova.getContext();
+            File dir = context.getExternalFilesDir(null);
+            if (dir == null) {
+                // 外部存储不可用时退回内部存储
+                dir = context.getFilesDir();
+            }
+            callbackContext.success(dir.getAbsolutePath());
+        } catch (Exception e) {
             callbackContext.error(e.getMessage());
         }
     }

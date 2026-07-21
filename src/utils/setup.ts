@@ -229,7 +229,7 @@ export const LAUNCHER_CONFIG_FILE = {
   path: `${LAUNCHER_CONFIG_DIR}/launcher.json`,
   content: JSON.stringify({
     name: 'SakuraMC',
-    version: '0.5.1',
+    version: '0.5.3',
     createdAt: new Date().toISOString(),
     minecraftDir: MINECRAFT_DIR,
     controlDir: CONTROL_DIR,

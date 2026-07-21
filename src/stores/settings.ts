@@ -2,8 +2,24 @@ import { defineStore } from 'pinia'
 import type { ISettings } from '@/types'
 import type { DownloadSource } from '@/api/bmcl'
 import { detectPlatform } from '@/utils/format'
+import { isCordova, getAppExternalFilesDir } from '@/utils/cordova-fs'
+import { getDefaultGameDirSync, getDefaultLauncherDirSync } from '@/utils/path'
 
 const STORAGE_KEY = 'sakuram.settings.v1'
+
+function buildDefaultPaths(): Partial<ISettings> {
+  const base = getDefaultGameDirSync()
+  return {
+    gameDir: base,
+    versionsDir: `${base}/versions`,
+    modsDir: `${base}/mods`,
+    resourcepacksDir: `${base}/resourcepacks`,
+    savesDir: `${base}/saves`,
+    screenshotsDir: `${base}/screenshots`,
+    logsDir: `${base}/logs`,
+    shaderpacksDir: `${base}/shaderpacks`
+  }
+}
 
 const defaultSettings: ISettings = {
   javaPath: '',
@@ -11,14 +27,7 @@ const defaultSettings: ISettings = {
   maxMemory: 4096,
   minMemory: 1024,
   downloadSource: 'bmcl' as DownloadSource,
-  gameDir: '/storage/emulated/0/SakuraMC/.minecraft',
-  versionsDir: '/storage/emulated/0/SakuraMC/.minecraft/versions',
-  modsDir: '/storage/emulated/0/SakuraMC/.minecraft/mods',
-  resourcepacksDir: '/storage/emulated/0/SakuraMC/.minecraft/resourcepacks',
-  savesDir: '/storage/emulated/0/SakuraMC/.minecraft/saves',
-  screenshotsDir: '/storage/emulated/0/SakuraMC/.minecraft/screenshots',
-  logsDir: '/storage/emulated/0/SakuraMC/.minecraft/logs',
-  shaderpacksDir: '/storage/emulated/0/SakuraMC/.minecraft/shaderpacks',
+  ...buildDefaultPaths(),
   showSnapshots: false,
   showOldVersions: false,
   fullscreen: true,
@@ -59,6 +68,34 @@ export const useSettingsStore = defineStore('settings', {
         if (raw) Object.assign(this, JSON.parse(raw as string))
       } catch (e) {
         console.warn('[Settings] load failed', e)
+      }
+    },
+    async initAsync() {
+      if (!isCordova()) return
+      try {
+        const extDir = await getAppExternalFilesDir()
+        if (!extDir) return
+        const baseGameDir = `${extDir}/SakuraMC/.minecraft`
+        const stored = uni.getStorageSync(STORAGE_KEY)
+        if (stored) {
+          const parsed = JSON.parse(stored as string)
+          if (parsed.gameDir && !parsed.gameDir.includes(extDir)) {
+            return
+          }
+        }
+        if (!this.gameDir || !this.gameDir.includes(extDir)) {
+          this.gameDir = baseGameDir
+          this.versionsDir = `${baseGameDir}/versions`
+          this.modsDir = `${baseGameDir}/mods`
+          this.resourcepacksDir = `${baseGameDir}/resourcepacks`
+          this.savesDir = `${baseGameDir}/saves`
+          this.screenshotsDir = `${baseGameDir}/screenshots`
+          this.logsDir = `${baseGameDir}/logs`
+          this.shaderpacksDir = `${baseGameDir}/shaderpacks`
+          this.save()
+        }
+      } catch (e) {
+        console.warn('[Settings] initAsync failed', e)
       }
     },
     save() {

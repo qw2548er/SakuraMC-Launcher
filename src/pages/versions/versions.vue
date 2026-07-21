@@ -93,10 +93,26 @@ function importPack() {
         })
         uni.hideLoading()
         if (result.success) {
-          uni.showToast({
-            title: `导入成功: ${result.name} (${result.format})\n已安装 ${result.modCount} 个 Mod`,
-            icon: 'none',
-            duration: 3000
+          // 构建导入结果提示
+          let msg = `导入成功: ${result.name} (${result.format})\n已安装 ${result.modCount} 个 Mod`
+          if (result.mcVersion) msg += `\nMC 版本: ${result.mcVersion}`
+          if (result.compat === 'error') {
+            msg += `\n⚠️ 版本不兼容: 整合包为 MC ${result.mcVersion}, 与当前选中版本差异较大`
+          } else if (result.compat === 'warn') {
+            msg += `\n⚠️ 跨版本: 整合包为 MC ${result.mcVersion}, 可能存在兼容性问题`
+          }
+          if (result.conflictingMods && result.conflictingMods.length > 0) {
+            msg += `\n⚠️ 冲突 Mod (${result.conflictingMods.length} 个):\n`
+            msg += result.conflictingMods.slice(0, 5).join('\n')
+            if (result.conflictingMods.length > 5) {
+              msg += `\n...等 ${result.conflictingMods.length} 个`
+            }
+          }
+          uni.showModal({
+            title: '导入结果',
+            content: msg,
+            showCancel: false,
+            confirmText: '知道了'
           })
           versionStore.load()
         } else {

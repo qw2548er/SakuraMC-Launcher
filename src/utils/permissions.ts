@@ -5,7 +5,7 @@
  * 所以没有 plus 对象, 所有原生能力通过 SakuraMCCore 插件调用.
  */
 
-import { isCordova } from './cordova-fs'
+import { isCordova, waitForReady } from './cordova-fs'
 
 export interface PermissionResult {
   allGranted: boolean
@@ -34,14 +34,23 @@ function getPlugin(): CordovaSakuraCore | null {
   return null
 }
 
-function exec<T>(action: string, args: any[] = []): Promise<T> {
+async function exec<T>(action: string, args: any[] = []): Promise<T> {
+  await waitForReady().catch(() => {})
   return new Promise((resolve, reject) => {
+    const w = window as any
+    // 优先使用已注册的 JS 模块
     const plugin = getPlugin()
-    if (!plugin) {
-      reject(new Error('SakuraMCCore plugin not available'))
+    if (plugin && typeof (plugin as any)[action] === 'function') {
+      ;(plugin as any)[action](...args, resolve, reject)
       return
     }
-    ;(plugin as any)[action](...(args as any[]), resolve, reject)
+    // 回退: 直接通过 cordova.exec 调用
+    const execFn = w.cordova?.exec
+    if (execFn) {
+      execFn(resolve, reject, 'SakuraMCCore', action, args)
+      return
+    }
+    reject(new Error('SakuraMCCore plugin not available (无 JS 模块且 cordova.exec 不存在)'))
   })
 }
 
@@ -132,7 +141,22 @@ export async function requestCorePermissions(): Promise<boolean> {
           success: async (r) => {
             if (r.confirm) {
               const granted = await requestManageExternalStorage()
-              resolve(granted && res.allGranted)
+              if (granted) {
+                resolve(true)
+              } else {
+                uni.showModal({
+                  title: '权限未授予',
+                  content: '需要存储权限才能读取游戏资源。请前往设置开启「所有文件访问权限」。',
+                  confirmText: '去设置',
+                  cancelText: '取消',
+                  success: async (r2) => {
+                    if (r2.confirm) {
+                      await openAppSettings()
+                    }
+                    resolve(false)
+                  }
+                })
+              }
             } else {
               resolve(res.allGranted)
             }

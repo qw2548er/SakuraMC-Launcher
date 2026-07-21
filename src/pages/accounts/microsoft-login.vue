@@ -6,8 +6,9 @@ import McCard from '@/components/mc-card.vue'
 import { copyText } from '@/utils/format'
 
 const accountStore = useAccountStore()
-const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)
-// 防止 async 轮询重入: 上一次请求未返回时, 下一个 interval 触发应跳过
+// 用 setTimeout 递归调度, 以便响应 slow_down 动态调整间隔
+const pollTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+// 防止 async 轮询重入: 上一次请求未返回时, 下一次调度应跳过
 let pollingInFlight = false
 const step = ref<'idle' | 'waiting' | 'success' | 'expired' | 'error'>('idle')
 const elapsed = ref(0)
@@ -20,37 +21,47 @@ async function startLogin() {
   pollingInFlight = false
   try {
     await accountStore.startMicrosoftLogin()
-    const intervalSec = accountStore.msLoginFlow?.interval || 5
-    pollTimer.value = setInterval(async () => {
-      // 防重入: 上一次轮询未完成则跳过本次
-      if (pollingInFlight) return
-      pollingInFlight = true
-      try {
-        elapsed.value += accountStore.msLoginFlow?.interval || intervalSec
-        const status = await accountStore.pollMicrosoftLogin()
-        if (status === 'success') {
-          step.value = 'success'
-          stopPolling()
-          uni.showToast({ title: '登录成功', icon: 'success' })
-          setTimeout(() => uni.navigateBack(), 1200)
-        } else if (status === 'expired' || status === 'error') {
-          step.value = status
-          errorMsg.value = accountStore.msLoginError || ''
-          stopPolling()
-        }
-      } finally {
-        pollingInFlight = false
-      }
-    }, intervalSec * 1000)
+    schedulePoll()
   } catch (e: any) {
     step.value = 'error'
     errorMsg.value = e?.message || '未知错误'
   }
 }
 
+function schedulePoll() {
+  const intervalSec = accountStore.msLoginFlow?.interval || 5
+  pollTimer.value = setTimeout(async () => {
+    // 防重入: 上一次轮询未完成则跳过本次, 重新调度
+    if (pollingInFlight) {
+      schedulePoll()
+      return
+    }
+    pollingInFlight = true
+    try {
+      elapsed.value += accountStore.msLoginFlow?.interval || 5
+      const status = await accountStore.pollMicrosoftLogin()
+      if (status === 'success') {
+        step.value = 'success'
+        stopPolling()
+        uni.showToast({ title: '登录成功', icon: 'success' })
+        setTimeout(() => uni.navigateBack(), 1200)
+      } else if (status === 'expired' || status === 'error') {
+        step.value = status
+        errorMsg.value = accountStore.msLoginError || ''
+        stopPolling()
+      } else {
+        // pending: 继续下一轮 (interval 可能已被 slow_down 调整)
+        schedulePoll()
+      }
+    } finally {
+      pollingInFlight = false
+    }
+  }, intervalSec * 1000)
+}
+
 function stopPolling() {
   if (pollTimer.value) {
-    clearInterval(pollTimer.value)
+    clearTimeout(pollTimer.value)
     pollTimer.value = null
   }
   pollingInFlight = false
@@ -72,24 +83,19 @@ async function copyCode() {
 
 function openLoginUrl() {
   const url = accountStore.msLoginFlow?.verificationUri || 'https://microsoft.com/devicelogin'
-  // #ifdef H5
+  // Cordova 环境: 优先使用 InAppBrowser 在系统浏览器打开
+  const w = window as any
+  if (w.cordova && w.cordova.InAppBrowser) {
+    w.cordova.InAppBrowser.open(url, '_system')
+    return
+  }
+  // H5 环境
   if (typeof window !== 'undefined' && window.open) {
     window.open(url, '_blank')
-  } else {
-    uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '已复制链接, 请在浏览器打开', icon: 'none' }) })
+    return
   }
-  // #endif
-  // #ifdef APP-PLUS
-  // @ts-ignore
-  if (typeof plus !== 'undefined' && plus.runtime?.openURL) {
-    plus.runtime.openURL(url, () => uni.showToast({ title: '打开失败, 请手动访问', icon: 'none' }))
-  } else {
-    uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '已复制链接, 请在浏览器打开', icon: 'none' }) })
-  }
-  // #endif
-  // #ifndef APP-PLUS || H5
+  // 兜底: 复制链接
   uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '已复制链接, 请在浏览器打开', icon: 'none' }) })
-  // #endif
 }
 
 onUnmounted(stopPolling)

@@ -547,7 +547,7 @@ export function buildLaunchArgs(options: LaunchOptions, versionJson: VersionJson
     '-Dfml.ignorePatchDiscrepancies=true',
     `-Djava.library.path=${nativesDir}`,
     `-Dminecraft.launcher.brand=${versionType}`,
-    '-Dminecraft.launcher.version=0.5.1',
+    '-Dminecraft.launcher.version=0.5.3',
     ...extraJvmArgs
   ]
 

@@ -17,6 +17,14 @@ import {
   rename,
   type ZipEntry
 } from './file-chooser'
+import {
+  readTextFile,
+  writeTextFile,
+  readBinaryFile,
+  writeBinaryFile,
+  listDirectory,
+  fileExists
+} from './cordova-fs'
 
 export type ModpackFormat = 'modrinth' | 'curseforge' | 'plain'
 
@@ -43,6 +51,43 @@ export interface ImportResult {
   destDir: string
   modCount: number
   error?: string
+  /** 整合包声明的 MC 版本 */
+  mcVersion?: string
+  /** 版本兼容性: ok 兼容, warn 跨次版本, error 跨大版本 */
+  compat?: 'ok' | 'warn' | 'error' | 'unknown'
+  /** 冲突的 mod 列表 (文件名) */
+  conflictingMods?: string[]
+}
+
+/**
+ * 比较整合包声明的 MC 版本与当前选中版本
+ */
+function checkMcVersionCompat(packMc: string, currentMc: string): 'ok' | 'warn' | 'error' | 'unknown' {
+  if (!packMc || !currentMc) return 'unknown'
+  const parseMajor = (v: string) => {
+    const m = v.match(/^(\d+)\.(\d+)/)
+    return m ? [parseInt(m[1], 10), parseInt(m[2], 10)] : null
+  }
+  const a = parseMajor(packMc)
+  const b = parseMajor(currentMc)
+  if (!a || !b) return 'unknown'
+  if (a[0] !== b[0]) return 'error'
+  if (a[1] !== b[1]) {
+    return Math.abs(a[1] - b[1]) === 1 ? 'warn' : 'error'
+  }
+  return 'ok'
+}
+
+/**
+ * 从文件名猜测 MC 版本
+ */
+function guessModMcFromName(name: string): string {
+  const m = name.match(/[-_+](\d+\.\d+(?:\.\d+)?)/)
+  if (m) {
+    const major = parseInt(m[1].split('.')[0], 10)
+    if (major >= 1) return m[1]
+  }
+  return ''
 }
 
 /** 选择并导入整合包 */
@@ -131,26 +176,13 @@ function detectFormat(entries: ZipEntry[]): ModpackInfo {
 
 /** 读取解压后的 JSON 文件 */
 async function readJson(filePath: string): Promise<any> {
-  // #ifdef APP-PLUS
-  return new Promise((resolve, reject) => {
-    try {
-      const fs = plus.io.getFileSystemManager()
-      fs.readFile({
-        filePath,
-        encoding: 'utf-8',
-        success: (res: any) => {
-          try { resolve(JSON.parse(res.data || '{}')) } catch (e: any) { reject(e) }
-        },
-        fail: (e: any) => reject(new Error(e.message))
-      })
-    } catch (e: any) {
-      reject(e)
-    }
-  })
-  // #endif
-  // #ifndef APP-PLUS
-  return {}
-  // #endif
+  const text = await readTextFile(filePath)
+  try {
+    return JSON.parse(text || '{}')
+  } catch (e) {
+    console.warn('[Modpack] readJson parse failed', filePath, e)
+    return {}
+  }
 }
 
 /** 安装 Modrinth 整合包 */
@@ -212,12 +244,20 @@ async function installModrinth(
     // 清理解压目录
     try { await deleteFile(unpackedDir, true) } catch {}
 
+    // 版本兼容性校验
+    const currentMc = getCurrentMcVersion()
+    const compat = checkMcVersionCompat(mcVersion, currentMc)
+    const conflictingMods = detectConflictingMods(modsDir, mcVersion)
+
     return {
       success: true,
       format: 'modrinth',
       name,
       destDir: versionDir,
       modCount: installedMods,
+      mcVersion,
+      compat,
+      conflictingMods
     }
   } catch (e: any) {
     return {
@@ -289,12 +329,20 @@ async function installCurseforge(
     // 清理
     try { await deleteFile(unpackedDir, true) } catch {}
 
+    // 版本兼容性校验
+    const currentMc = getCurrentMcVersion()
+    const compat = checkMcVersionCompat(mcVersion, currentMc)
+    const conflictingMods = detectConflictingMods(modsDir, mcVersion)
+
     return {
       success: true,
       format: 'curseforge',
       name,
       destDir: versionDir,
-      modCount: installedMods
+      modCount: installedMods,
+      mcVersion,
+      compat,
+      conflictingMods
     }
   } catch (e: any) {
     return {
@@ -326,28 +374,17 @@ async function installPlain(
 
 /** 将 overrides 目录递归复制到 .minecraft/ */
 async function copyOverrideToMc(overridesDir: string): Promise<void> {
-  // #ifdef APP-PLUS
   try {
-    const fs = plus.io.getFileSystemManager()
-    const access = () => copyDirRecursive(overridesDir, MINECRAFT_DIR)
-    await new Promise<void>((resolve, reject) => {
-      fs.access({
-        path: overridesDir,
-        success: () => resolve(),
-        fail: () => resolve()  // 没有 overrides 也允许
-      })
-    })
-    await access()
+    const exists = await fileExists(overridesDir)
+    if (!exists) return  // 没有 overrides 也允许
+    await copyDirRecursive(overridesDir, MINECRAFT_DIR)
   } catch (e) {
     console.warn('[Modpack] copyOverrideToMc failed', e)
   }
-  // #endif
 }
 
 /** 递归复制目录 */
 async function copyDirRecursive(srcDir: string, destDir: string): Promise<void> {
-  // #ifdef APP-PLUS
-  const fs = plus.io.getFileSystemManager()
   await ensureDir(destDir)
   const entries = await listDirEntries(srcDir)
   for (const entry of entries) {
@@ -363,128 +400,80 @@ async function copyDirRecursive(srcDir: string, destDir: string): Promise<void> 
       }
     }
   }
-  // #endif
 }
 
 /** 列出目录条目 (含 isFile / isDirectory) */
-function listDirEntries(dirPath: string): Promise<{ name: string; isFile: boolean; isDirectory: boolean }[]> {
-  return new Promise((resolve, reject) => {
-    // #ifdef APP-PLUS
-    try {
-      const fs = plus.io.getFileSystemManager()
-      fs.readdir({
-        dirPath,
-        success: (res: any) => {
-          const items: any[] = res.entries || res || []
-          const result: { name: string; isFile: boolean; isDirectory: boolean }[] = []
-          let pending = items.length
-          if (pending === 0) { resolve(result); return }
-          for (const it of items) {
-            const name = it?.name || String(it)
-            if (!name || name === '.' || name === '..') { pending--; if (pending === 0) resolve(result); continue }
-            const fullPath = `${dirPath}/${name}`
-            fs.stat({
-              path: fullPath,
-              success: (statRes: any) => {
-                const stat = statRes.stats || statRes
-                result.push({ name, isFile: !!stat.isFile, isDirectory: !!stat.isDirectory })
-                pending--
-                if (pending === 0) resolve(result)
-              },
-              fail: () => {
-                result.push({ name, isFile: true, isDirectory: false })
-                pending--
-                if (pending === 0) resolve(result)
-              }
-            })
-          }
-        },
-        fail: (e: any) => reject(new Error(e.message))
-      })
-    } catch (e: any) {
-      reject(e)
-    }
-    // #endif
-    // #ifndef APP-PLUS
-    resolve([])
-    // #endif
-  })
+async function listDirEntries(dirPath: string): Promise<{ name: string; isFile: boolean; isDirectory: boolean }[]> {
+  const entries = await listDirectory(dirPath)
+  return entries.map(e => ({
+    name: e.name,
+    isFile: !e.isDir,
+    isDirectory: e.isDir
+  }))
 }
 
 /** 安全复制文件 (覆盖目标) */
-function copyFileSafe(srcPath: string, destPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // #ifdef APP-PLUS
-    try {
-      const fs = plus.io.getFileSystemManager()
-      // 确保 dest 目录存在
-      const destDir = destPath.substring(0, destPath.lastIndexOf('/'))
-      fs.access({
-        path: destDir,
-        success: () => doCopy(),
-        fail: () => {
-          fs.mkdir({
-            dirPath: destDir,
-            recursive: true,
-            success: doCopy,
-            fail: (e: any) => reject(new Error(e.message))
-          })
-        }
-      })
-      function doCopy() {
-        fs.copyFile({
-          srcPath,
-          destPath,
-          success: () => resolve(),
-          fail: (e: any) => reject(new Error(e.message))
-        })
-      }
-    } catch (e: any) {
-      reject(e)
-    }
-    // #endif
-    // #ifndef APP-PLUS
-    resolve()
-    // #endif
-  })
+async function copyFileSafe(srcPath: string, destPath: string): Promise<void> {
+  // 确保 dest 目录存在
+  const destDir = destPath.substring(0, destPath.lastIndexOf('/'))
+  await ensureDir(destDir)
+  const data = await readBinaryFile(srcPath)
+  await writeBinaryFile(destPath, data)
 }
 
 /** 写入版本 json 占位文件, 让启动器识别 */
-function writeVersionJson(
+async function writeVersionJson(
   versionDir: string,
   versionId: string,
   mcVersion: string,
   modLoaderType?: string,
   modLoaderVer?: string
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // #ifdef APP-PLUS
-    try {
-      const fs = plus.io.getFileSystemManager()
-      const data = {
-        id: versionId,
-        time: new Date().toISOString(),
-        releaseTime: new Date().toISOString(),
-        type: 'release',
-        mainClass: modLoaderType === 'fabric' ? 'net.fabricmc.loader.launch.knot.Client' : 'net.minecraft.client.main.Main',
-        inheritsFrom: mcVersion,
-        minecraftArguments: '--username ${auth_name} --version ${version_name} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --userType ${user_type} --versionType ${version_type}',
-        libraries: [],
-        jar: mcVersion
+  const data = {
+    id: versionId,
+    time: new Date().toISOString(),
+    releaseTime: new Date().toISOString(),
+    type: 'release',
+    mainClass: modLoaderType === 'fabric' ? 'net.fabricmc.loader.launch.knot.Client' : 'net.minecraft.client.main.Main',
+    inheritsFrom: mcVersion,
+    minecraftArguments: '--username ${auth_name} --version ${version_name} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --userType ${user_type} --versionType ${version_type}',
+    libraries: [],
+    jar: mcVersion
+  }
+  await writeTextFile(`${versionDir}/${versionId}.json`, JSON.stringify(data, null, 2))
+}
+
+/**
+ * 获取当前选中的 MC 版本 (从 version store 本地缓存读取)
+ */
+function getCurrentMcVersion(): string {
+  try {
+    const raw = uni.getStorageSync('sakuram.versions.selected')
+    if (raw) return String(raw)
+  } catch {}
+  return ''
+}
+
+/**
+ * 检测 mods 目录中与整合包声明 MC 版本不兼容的 mod
+ * 通过文件名猜测 mod 适配的 MC 版本
+ */
+async function detectConflictingMods(modsDir: string, packMc: string): Promise<string[]> {
+  if (!packMc) return []
+  const conflicts: string[] = []
+  try {
+    const entries = await listDirectory(modsDir)
+    for (const e of entries) {
+      if (e.isDir || !/\.jar(\.disabled)?$/i.test(e.name)) continue
+      const modMc = guessModMcFromName(e.name)
+      if (!modMc) continue
+      const compat = checkMcVersionCompat(modMc, packMc)
+      if (compat === 'error' || compat === 'warn') {
+        conflicts.push(`${e.name} (适配 MC ${modMc})`)
       }
-      fs.writeFile({
-        filePath: `${versionDir}/${versionId}.json`,
-        data: JSON.stringify(data, null, 2),
-        encoding: 'utf-8',
-        success: () => resolve(),
-        fail: (e: any) => reject(new Error(e.message))
-      })
-    } catch (e: any) {
-      reject(e)
     }
-    // #endif
-    // #ifndef APP-PLUS
-    resolve()
-    // #endif
-  })
+  } catch (e) {
+    // 读取 mods 目录失败, 跳过
+  }
+  return conflicts
 }
