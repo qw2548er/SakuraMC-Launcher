@@ -38,7 +38,9 @@ export function isCordovaReady(): boolean {
   if (_deviceReady) return true
   try {
     const w = window as any
-    return !!(w.cordova && w.device)
+    // 不依赖 window.device (需要 cordova-plugin-device, 本项目未安装)
+    // 只检查 deviceready 标记
+    return !!(w.cordova && _deviceReady)
   } catch {
     return false
   }
@@ -48,10 +50,12 @@ export function isCordovaReady(): boolean {
  * 等待 Cordova deviceready 事件
  * 如果已经 ready, 立即 resolve
  * 重复调用会返回同一个 Promise
+ *
+ * 默认超时 45 秒, Android 15 冷启动可能较慢
  */
-export function waitForReady(timeout = 15000): Promise<void> {
+export function waitForReady(timeout = 45000): Promise<void> {
   if (_deviceReadyPromise) return _deviceReadyPromise
-  
+
   _deviceReadyPromise = new Promise((resolve, reject) => {
     if (!isCordova()) {
       reject(new Error('非 Cordova 环境'))
@@ -61,45 +65,45 @@ export function waitForReady(timeout = 15000): Promise<void> {
       resolve()
       return
     }
+
     const w = window as any
-    if (w.cordova && w.device) {
-      _deviceReady = true
-      resolve()
-      return
-    }
     const timer = setTimeout(() => {
-      // 超时了但只要检测到 cordova 对象就认为可用 (某些插件可能加载慢但不影响)
-      if (w.cordova) {
-        console.warn('[CordovaFS] deviceready 超时, 但 cordova 对象存在, 继续执行')
+      if (w.cordova && typeof w.cordova.exec === 'function') {
+        console.warn('[CordovaFS] deviceready 超时, 但 cordova.exec 可用, 继续执行')
         _deviceReady = true
         resolve()
       } else {
-        reject(new Error('Cordova 初始化超时'))
+        _deviceReadyPromise = null
+        reject(new Error('Cordova 初始化超时 (cordova.exec 不可用)'))
       }
     }, timeout)
-    
+
     const onReady = () => {
       clearTimeout(timer)
       _deviceReady = true
       resolve()
     }
-    
+
     document.addEventListener('deviceready', onReady, { once: true } as any)
-    
-    // 兜底: 轮询检测
+
     let checks = 0
+    const maxChecks = Math.floor(timeout / 300)
     const poll = setInterval(() => {
       checks++
-      if (w.cordova && w.device) {
+      if (w.cordova && typeof w.cordova.exec === 'function') {
+        console.warn('[CordovaFS] 轮询检测到 cordova.exec 可用, 提前 resolve')
         clearInterval(poll)
-        onReady()
+        clearTimeout(timer)
+        _deviceReady = true
+        resolve()
+        return
       }
-      if (checks > 30) {
+      if (checks > maxChecks) {
         clearInterval(poll)
       }
-    }, 200)
+    }, 300)
   })
-  
+
   return _deviceReadyPromise
 }
 
@@ -121,16 +125,19 @@ async function coreExec<T>(action: string, args: any[] = []): Promise<T> {
   await waitForReady()
   return new Promise((resolve, reject) => {
     const w = window as any
+    // 优先使用已注册的 JS 模块 (plugin.xml <js-module>)
     const plugin = w.cordova?.plugins?.SakuraMCCore
-    if (!plugin) {
-      reject(new Error('SakuraMCCore 插件不可用'))
+    if (plugin && typeof (plugin as any)[action] === 'function') {
+      ;(plugin as any)[action](...args, resolve, reject)
       return
     }
-    if (typeof (plugin as any)[action] !== 'function') {
-      reject(new Error(`SakuraMCCore.${action} 方法不存在`))
+    // 回退: 直接通过 cordova.exec 调用 (config.xml <feature> 注册即可)
+    const exec = w.cordova?.exec
+    if (exec) {
+      exec(resolve, reject, 'SakuraMCCore', action, args)
       return
     }
-    ;(plugin as any)[action](...args, resolve, reject)
+    reject(new Error('SakuraMCCore 插件不可用 (无 JS 模块且 cordova.exec 不存在)'))
   })
 }
 
@@ -557,9 +564,64 @@ export async function downloadFile(
 
 // ============ 目录路径工具 ============
 
+let _appFilesDir: string | null = null
+let _appExternalFilesDir: string | null = null
+
+/**
+ * 获取应用私有文件目录 (内部存储, 不需要权限)
+ * 对应 Android Context.getFilesDir()
+ */
+export async function getAppFilesDir(): Promise<string> {
+  if (_appFilesDir) return _appFilesDir
+  if (!isCordova()) {
+    _appFilesDir = '/data/data/com.sakuramc.launcher/files'
+    return _appFilesDir
+  }
+  try {
+    const dir = await coreExec<string>('getAppFilesDir', [])
+    if (dir) {
+      _appFilesDir = dir
+      return dir
+    }
+  } catch {
+    // 插件不支持此方法, 走默认值
+  }
+  _appFilesDir = '/data/data/com.sakuramc.launcher/files'
+  return _appFilesDir
+}
+
+/**
+ * 获取应用外部私有目录 (外部存储, 不需要权限)
+ * 对应 Android Context.getExternalFilesDir(null)
+ * 路径类似: /storage/emulated/0/Android/data/com.sakuramc.launcher/files
+ * 
+ * 推荐游戏文件放这里, 高版本 Android 访问不会被卡
+ */
+export async function getAppExternalFilesDir(): Promise<string> {
+  if (_appExternalFilesDir) return _appExternalFilesDir
+  if (!isCordova()) {
+    _appExternalFilesDir = '/storage/emulated/0/Android/data/com.sakuramc.launcher/files'
+    return _appExternalFilesDir
+  }
+  try {
+    const dir = await coreExec<string>('getAppExternalFilesDir', [])
+    if (dir) {
+      _appExternalFilesDir = dir
+      return dir
+    }
+  } catch {
+    // 插件不支持此方法, 走默认值
+  }
+  _appExternalFilesDir = '/storage/emulated/0/Android/data/com.sakuramc.launcher/files'
+  return _appExternalFilesDir
+}
+
 /**
  * 获取外部存储根目录
  * 优先从 SakuraMCCore 获取, 否则使用默认值
+ * 
+ * 注意: 高版本 Android (10+) 访问此目录需要 MANAGE_EXTERNAL_STORAGE 权限
+ * 推荐优先使用 getAppExternalFilesDir()
  */
 export function getExternalStorageDir(): string {
   return '/storage/emulated/0'
