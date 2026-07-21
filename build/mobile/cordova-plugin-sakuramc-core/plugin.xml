@@ -100,8 +100,5 @@
         
         <!-- 预置资源文件：JRE、游戏核心文件等 -->
         <resource-file src="src/android/assets/" target="assets/" />
-        
-        <!-- Native 库 (PojavLauncher 核心依赖) -->
-        <source-file src="src/android/jniLibs/" target-dir="libs/" />
     </platform>
 </plugin>
