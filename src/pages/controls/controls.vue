@@ -58,7 +58,7 @@ async function loadPresets() {
   try {
     // #ifdef APP-PLUS
     const fileSystem = plus.io.getFileSystemManager()
-    const presetDir = '/storage/emulated/0/SakuraMC/control'
+    const presetDir = '/storage/emulated/0/MaoNingMC/control'
 
     try {
       const result = fileSystem.readdirSync({ dirPath: presetDir })
@@ -103,7 +103,7 @@ async function savePreset(preset: ControlPreset) {
   // #ifdef APP-PLUS
   try {
     const fileSystem = plus.io.getFileSystemManager()
-    const presetDir = '/storage/emulated/0/SakuraMC/control'
+    const presetDir = '/storage/emulated/0/MaoNingMC/control'
     try { fileSystem.accessSync(presetDir) }
     catch { fileSystem.mkdirSync({ dirPath: presetDir, recursive: true }) }
     fileSystem.writeFileSync(`${presetDir}/${preset.id}.json`, JSON.stringify(preset, null, 2), 'utf-8')
@@ -138,7 +138,7 @@ async function deletePreset(preset: ControlPreset) {
         try {
           // #ifdef APP-PLUS
           const fileSystem = plus.io.getFileSystemManager()
-          fileSystem.unlinkSync(`/storage/emulated/0/SakuraMC/control/${preset.id}.json`)
+          fileSystem.unlinkSync(`/storage/emulated/0/MaoNingMC/control/${preset.id}.json`)
           // #endif
           // #ifndef APP-PLUS
           uni.removeStorageSync(`sakuram.control.${preset.id}`)

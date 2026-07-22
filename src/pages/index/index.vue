@@ -198,8 +198,8 @@ function ignoreUpdate() {
     
     <view class="launcher__header">
       <view class="header__logo">
-        <text class="logo__icon">🌸</text>
-        <text class="logo__text">樱花 MC</text>
+        <text class="logo__icon">🐱</text>
+        <text class="logo__text">猫宁 MC</text>
       </view>
       <view class="header__account" @tap="chooseAccount">
         <GameIcon v-if="selectedAccount" :uuid="selectedAccount.uuid" :size="40" variant="head" />
@@ -320,7 +320,7 @@ function ignoreUpdate() {
         <view class="info-card">
           <view class="info-card__icon">📢</view>
           <view class="info-card__content">
-            <text class="info-card__title">樱花 MC 启动器 v0.5.4</text>
+            <text class="info-card__title">猫宁MC启动器 v0.5.10</text>
             <text class="info-card__desc">支持 Forge / Fabric / Quilt / NeoForge / OptiFine 平台依赖</text>
           </view>
         </view>
@@ -381,7 +381,7 @@ function ignoreUpdate() {
       position: absolute;
       inset: 0;
       background: 
-        linear-gradient(180deg, #1a0a14 0%, #2d1520 40%, #1f0d18 100%);
+        linear-gradient(180deg, #1a0d0a 0%, #2d1810 40%, #1f0f0a 100%);
     }
     
     &-noise {
@@ -422,8 +422,8 @@ function ignoreUpdate() {
     height: 44px;
     border-radius: 50%;
     overflow: hidden;
-    border: 2px solid rgba(255, 183, 213, 0.4);
-    box-shadow: 0 2px 12px rgba(255, 143, 171, 0.2);
+    border: 2px solid rgba(255, 159, 67, 0.4);
+    box-shadow: 0 2px 12px rgba(255, 159, 67, 0.2);
     
     image {
       width: 100%;
@@ -434,7 +434,7 @@ function ignoreUpdate() {
   &__account-placeholder {
     width: 100%;
     height: 100%;
-    background: rgba(255, 183, 213, 0.15);
+    background: rgba(255, 159, 67, 0.15);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -456,10 +456,10 @@ function ignoreUpdate() {
 }
 
 .hero-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 159, 67, 0.05);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 183, 213, 0.15);
+  border: 1px solid rgba(255, 159, 67, 0.2);
   border-radius: 20px;
   padding: 20px;
   margin-bottom: 20px;
@@ -489,7 +489,7 @@ function ignoreUpdate() {
     height: 56px;
     
     &::before {
-      background: linear-gradient(135deg, #ff8fab, #ffb7d5);
+      background: linear-gradient(135deg, #ff9f43, #ee5253);
     }
   }
   

@@ -188,7 +188,7 @@ export const useVersionStore = defineStore('version', {
         downloaded: 0,
         status: 'downloading'
       })
-      const versionsDir = settings.versionsDir || '/storage/emulated/0/SakuraMC/.minecraft/versions'
+      const versionsDir = settings.versionsDir || '/storage/emulated/0/MaoNingMC/.minecraft/versions'
       const versionDir = `${versionsDir}/${versionId}`
       const jarPath = `${versionDir}/${versionId}.jar`
       const jsonPath = `${versionDir}/${versionId}.json`
@@ -315,7 +315,7 @@ export const useVersionStore = defineStore('version', {
       
       try {
         const settings = useSettingsStore()
-        const gameDir = settings.gameDir || '/storage/emulated/0/SakuraMC/.minecraft'
+        const gameDir = settings.gameDir || '/storage/emulated/0/MaoNingMC/.minecraft'
         
         uni.showToast({ title: `开始安装 ${platformType} ${platformVersion}`, icon: 'none', duration: 2000 })
         
@@ -501,7 +501,7 @@ export const useVersionStore = defineStore('version', {
     },
     async checkVersionInstalled(versionId: string): Promise<boolean> {
       const settings = useSettingsStore()
-      const gameDir = settings.gameDir || '/storage/emulated/0/SakuraMC/.minecraft'
+      const gameDir = settings.gameDir || '/storage/emulated/0/MaoNingMC/.minecraft'
       const info = await isVersionInstalled(versionId, gameDir)
       return info.installed
     }

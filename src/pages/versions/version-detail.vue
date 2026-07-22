@@ -96,7 +96,7 @@ async function downloadVersion() {
     }
 
     // 准备版本目录和保存路径
-    const versionsDir = settingsStore.versionsDir || '/storage/emulated/0/SakuraMC/.minecraft/versions'
+    const versionsDir = settingsStore.versionsDir || '/storage/emulated/0/MaoNingMC/.minecraft/versions'
     const versionDir = `${versionsDir}/${versionId.value}`
     const jarPath = `${versionDir}/${versionId.value}.jar`
     const jsonPath = `${versionDir}/${versionId.value}.json`

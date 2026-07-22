@@ -49,7 +49,7 @@ export function generateFrpcCommand(iniPath: string, binaryPath: string = 'frpc'
   return `${binaryPath} -c ${iniPath}`
 }
 
-/** 樱花 frpc 二进制下载 URL
+/** 猫宁 frpc 二进制下载 URL
  * iOS 端无法直接运行 frpc, 返回 PC 端 (windows amd64) 下载链接供用户在 PC 上下载
  */
 export function getFrpcBinaryUrl(): string {

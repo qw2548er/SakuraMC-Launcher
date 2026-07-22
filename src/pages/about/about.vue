@@ -3,9 +3,9 @@ import { ref } from 'vue'
 import { APP_VERSION, checkUpdate, openReleasePage } from '@/utils/updater'
 import { copyText } from '@/utils/format'
 
-const GITHUB_REPO = 'https://github.com/qw2548er/SakuraMC-Launcher'
-const GITHUB_ISSUES = 'https://github.com/qw2548er/SakuraMC-Launcher/issues/new'
-const GITHUB_RELEASES = 'https://github.com/qw2548er/SakuraMC-Launcher/releases'
+const GITHUB_REPO = 'https://github.com/qw2548er/MaoNingMC-Launcher'
+const GITHUB_ISSUES = 'https://github.com/qw2548er/MaoNingMC-Launcher/issues/new'
+const GITHUB_RELEASES = 'https://github.com/qw2548er/MaoNingMC-Launcher/releases'
 
 const checking = ref(false)
 const lastCheckResult = ref<'up-to-date' | 'has-update' | 'failed' | null>(null)
@@ -112,10 +112,10 @@ const techStack = [
     <scroll-view scroll-y class="about__content">
       <!-- 应用信息卡 -->
       <view class="hero">
-        <view class="hero__logo">🌸</view>
-        <text class="hero__name">樱花 MC 启动器</text>
+        <view class="hero__logo">🐱</view>
+        <text class="hero__name">猫宁MC启动器</text>
         <text class="hero__version">v{{ APP_VERSION }}</text>
-        <text class="hero__slogan">跨平台 Minecraft Java 版启动器</text>
+        <text class="hero__slogan">猫宁MC启动器 - Minecraft Java 版启动器</text>
         <view class="hero__tags">
           <text v-for="tech in techStack" :key="tech" class="hero__tag">{{ tech }}</text>
         </view>
@@ -168,7 +168,7 @@ const techStack = [
             <text class="action-row__icon">🐙</text>
             <view class="action-row__main">
               <text class="action-row__label">GitHub 仓库</text>
-              <text class="action-row__desc">qw2548er/SakuraMC-Launcher</text>
+              <text class="action-row__desc">qw2548er/MaoNingMC-Launcher</text>
             </view>
             <text class="action-row__arrow">›</text>
           </view>
@@ -223,8 +223,8 @@ const techStack = [
       </view>
 
       <view class="about__footer">
-        <text class="about__footer-text">Made with 💖 by SakuraMC Team</text>
-        <text class="about__footer-text">© 2026 SakuraMC. All rights reserved.</text>
+        <text class="about__footer-text">Made with 💖 by MaoNingMC Team</text>
+        <text class="about__footer-text">© 2026 MaoNingMC. All rights reserved.</text>
       </view>
     </scroll-view>
   </view>

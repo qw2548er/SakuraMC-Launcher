@@ -1,16 +1,16 @@
 /**
- * SakuraMC 目录结构初始化工具
- * 在手机本地 /storage/emulated/0/SakuraMC/ 创建完整的目录结构
+ * MaoNingMC 目录结构初始化工具
+ * 在手机本地 /storage/emulated/0/MaoNingMC/ 创建完整的目录结构
  * 包括 .minecraft 及其所有重要的子目录和文件
  *
  * 注意: 本项目使用 uni-app H5 + Cordova 打包 APK, 没有 plus 对象.
- * 所有文件操作通过 cordova-plugin-file 和 SakuraMCCore 插件完成.
+ * 所有文件操作通过 cordova-plugin-file 和 MaoNingMCCore 插件完成.
  */
 
 import * as cfs from './cordova-fs'
 
-// 樱花 MC 启动器根目录
-export const SAKURA_ROOT = '/storage/emulated/0/SakuraMC'
+// 猫宁 MC 启动器根目录
+export const SAKURA_ROOT = '/storage/emulated/0/MaoNingMC'
 
 // .minecraft 游戏目录
 export const MINECRAFT_DIR = `${SAKURA_ROOT}/.minecraft`
@@ -21,7 +21,7 @@ export const CONTROL_DIR = `${SAKURA_ROOT}/control`
 // Java 运行时目录
 export const JAVA_DIR = `${SAKURA_ROOT}/java`
 
-// 樱花穿透配置目录
+// 猫宁穿透配置目录
 export const FRP_DIR = `${SAKURA_ROOT}/frp`
 
 // 启动器配置目录
@@ -81,7 +81,7 @@ export const MINECRAFT_SUBDIRS = [
 ]
 
 /**
- * 樱花 MC 根目录下所有重要的子目录
+ * 猫宁 MC 根目录下所有重要的子目录
  */
 export const SAKURA_SUBDIRS = [
   '.minecraft',
@@ -108,8 +108,8 @@ export const DEFAULT_FILES: DefaultFile[] = [
     path: 'launcher_profiles.json',
     content: JSON.stringify({
       profiles: {
-        SakuraMC: {
-          name: 'SakuraMC',
+        MaoNingMC: {
+          name: 'MaoNingMC',
           type: 'custom',
           created: new Date().toISOString(),
           lastVersionId: '',
@@ -120,14 +120,14 @@ export const DEFAULT_FILES: DefaultFile[] = [
           javaArgs: ['-Xmx2G', '-XX:+UseG1GC']
         }
       },
-      selectedProfile: 'SakuraMC',
+      selectedProfile: 'MaoNingMC',
       clientToken: generateToken()
     }, null, 2),
     description: '启动器配置文件'
   },
   {
     path: 'options.txt',
-    content: `# Minecraft 选项 - 由 SakuraMC 启动器生成
+    content: `# Minecraft 选项 - 由 MaoNingMC 启动器生成
 lang:zh_CN
 chatScale:1.0
 chatWidthScale:1.0
@@ -228,8 +228,8 @@ key_key.hotbar.9:10
 export const LAUNCHER_CONFIG_FILE = {
   path: `${LAUNCHER_CONFIG_DIR}/launcher.json`,
   content: JSON.stringify({
-    name: 'SakuraMC',
-    version: '0.5.3',
+    name: 'MaoNingMC',
+    version: '0.5.10',
     createdAt: new Date().toISOString(),
     minecraftDir: MINECRAFT_DIR,
     controlDir: CONTROL_DIR,
@@ -283,7 +283,7 @@ export async function initializeSakuraMC(): Promise<{
   const createdFiles: string[] = []
   const errors: string[] = []
 
-  console.log('[Setup] 开始初始化 SakuraMC 目录结构...')
+  console.log('[Setup] 开始初始化 MaoNingMC 目录结构...')
 
   for (const dir of SAKURA_SUBDIRS) {
     const fullPath = `${SAKURA_ROOT}/${dir}`
@@ -325,7 +325,7 @@ export async function initializeSakuraMC(): Promise<{
 
   try {
     const versionsReadme = `${MINECRAFT_DIR}/versions/README.txt`
-    await writeFileIfNotExists(versionsReadme, `SakuraMC 版本目录
+    await writeFileIfNotExists(versionsReadme, `MaoNingMC 版本目录
 ========================
 
 此目录用于存放 Minecraft 游戏版本文件。
@@ -346,7 +346,7 @@ export async function initializeSakuraMC(): Promise<{
 
 只要此目录内有正确的游戏版本,就可以在启动器中点击「启动游戏」直接运行。
 
-由 SakuraMC 启动器自动创建于 ${new Date().toLocaleString('zh-CN')}
+由 MaoNingMC 启动器自动创建于 ${new Date().toLocaleString('zh-CN')}
 `)
     createdFiles.push(versionsReadme)
   } catch (e: any) {
@@ -355,7 +355,7 @@ export async function initializeSakuraMC(): Promise<{
 
   try {
     const controlReadme = `${CONTROL_DIR}/README.txt`
-    await writeFileIfNotExists(controlReadme, `SakuraMC 按键布局目录
+    await writeFileIfNotExists(controlReadme, `MaoNingMC 按键布局目录
 ========================
 
 此目录用于存放按键布局配置文件 (JSON 格式)。
@@ -368,7 +368,7 @@ export async function initializeSakuraMC(): Promise<{
   pvp.json           - PvP 布局
   builder.json       - 建筑布局
 
-由 SakuraMC 启动器自动创建于 ${new Date().toLocaleString('zh-CN')}
+由 MaoNingMC 启动器自动创建于 ${new Date().toLocaleString('zh-CN')}
 `)
     createdFiles.push(controlReadme)
   } catch (e: any) {

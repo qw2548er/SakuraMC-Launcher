@@ -148,12 +148,12 @@ const totalProgress = computed(() => installProgress.value)
     
     <view class="install__container">
       <view v-if="step === 'welcome'" class="install__panel">
-        <view class="install__logo">🌸</view>
-        <text class="install__title">樱花 MC 启动器</text>
-        <text class="install__subtitle">Sakura Minecraft Launcher</text>
+        <view class="install__logo">🐱</view>
+        <text class="install__title">猫宁MC启动器</text>
+        <text class="install__subtitle">MaoNing Minecraft Launcher</text>
         
         <view class="install__welcome">
-          <text class="install__welcome-text">欢迎使用樱花 MC 启动器！</text>
+          <text class="install__welcome-text">欢迎使用猫宁MC启动器！</text>
           <text class="install__welcome-text">首次使用需要安装 Java 运行环境</text>
           <text class="install__welcome-text">请选择你需要的 Java 版本</text>
         </view>
@@ -249,7 +249,7 @@ const totalProgress = computed(() => installProgress.value)
     </view>
     
     <view class="install__footer">
-      <text class="install__footer-text">🌸 樱花 MC 启动器 · v0.2.0</text>
+      <text class="install__footer-text">🐱 猫宁MC启动器 · v0.5.10</text>
     </view>
   </view>
 </template>

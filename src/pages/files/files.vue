@@ -84,7 +84,7 @@ const pathSegments = computed(() => {
   const relative = currentPath.value.replace(SAKURA_ROOT, '')
   const segments = relative.split('/').filter(s => s.length > 0)
   return [
-    { name: 'SakuraMC', path: SAKURA_ROOT },
+    { name: 'MaoNingMC', path: SAKURA_ROOT },
     ...segments.map((seg, i) => ({
       name: seg,
       path: `${SAKURA_ROOT}/${segments.slice(0, i + 1).join('/')}`

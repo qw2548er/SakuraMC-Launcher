@@ -1,7 +1,7 @@
 {
-  "name": "sakura-mc-launcher",
+  "name": "猫宁mc启动器",
   "version": "0.5.10",
-  "description": "MC 启动器 + 樱花穿透跨端控制台 (Uniapp Vue3)",
+  "description": "猫宁MC启动器 - Minecraft启动器",
   "private": true,
   "scripts": {
     "dev:h5": "uni",

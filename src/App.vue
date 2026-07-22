@@ -6,7 +6,7 @@ import { useFrpStore } from '@/stores/frp'
 import { initializeSakuraMC, isInitialized, markInitialized } from '@/utils/setup'
 
 onLaunch(() => {
-  console.log('[App] onLaunch - 樱花 MC 启动器启动')
+  console.log('[App] onLaunch - 猫宁MC启动器启动')
   const settings = useSettingsStore()
   const account = useAccountStore()
   const frp = useFrpStore()
@@ -14,7 +14,7 @@ onLaunch(() => {
   account.load()
   frp.load()
   
-  // 初始化 SakuraMC 目录结构 (异步执行,不阻塞界面)
+  // 初始化 MaoNingMC 目录结构 (异步执行,不阻塞界面)
   if (!isInitialized()) {
     console.log('[App] 首次运行,开始初始化目录结构...')
     initializeSakuraMC().then(result => {

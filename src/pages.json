@@ -3,7 +3,7 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "樱花 MC 启动器",
+        "navigationBarTitleText": "猫宁MC启动器",
         "navigationStyle": "custom",
         "enablePullDownRefresh": false
       }
@@ -88,7 +88,7 @@
     {
       "path": "pages/frp/frp",
       "style": {
-        "navigationBarTitleText": "樱花穿透",
+        "navigationBarTitleText": "猫宁穿透",
         "navigationStyle": "custom"
       }
     },
@@ -165,7 +165,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "white",
-    "navigationBarTitleText": "樱花 MC 启动器",
+    "navigationBarTitleText": "猫宁MC启动器",
     "navigationBarBackgroundColor": "#1a0f2e",
     "backgroundColor": "#0f0f1a"
   }

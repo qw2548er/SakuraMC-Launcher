@@ -94,7 +94,7 @@ function goBack() {
         <text class="servers__tips-title">💡 提示</text>
         <text class="servers__tips-text">• 选择服务器后启动游戏会自动加入</text>
         <text class="servers__tips-text">• 支持添加多个服务器快速切换</text>
-        <text class="servers__tips-text">• 使用樱花穿透可以开服让朋友加入</text>
+        <text class="servers__tips-text">• 使用猫宁穿透可以开服让朋友加入</text>
       </view>
     </scroll-view>
     

@@ -6,7 +6,7 @@ interface Props {
   speed?: number
 }
 const props = withDefaults(defineProps<Props>(), {
-  text: '欢迎使用樱花 MC 启动器 🌸',
+  text: '欢迎使用猫宁MC启动器 🐱',
   speed: 60
 })
 
@@ -14,7 +14,7 @@ const scrollText = ref(props.text)
 const isHover = ref(false)
 
 function openGithub() {
-  const url = 'https://github.com/qw2548er/SakuraMC-Launcher'
+  const url = 'https://github.com/qw2548er/MaoNingMC-Launcher'
   // #ifdef H5
   window.open(url, '_blank')
   // #endif

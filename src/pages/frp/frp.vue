@@ -59,7 +59,7 @@ async function doLogin() {
 async function doLogout() {
   uni.showModal({
     title: '退出登录',
-    content: '确定要退出樱花穿透账号吗?',
+    content: '确定要退出猫宁穿透账号吗?',
     success: r => {
       if (r.confirm) {
         frpStore.logout()
@@ -222,8 +222,8 @@ const trafficPercent = computed(() => {
     <NotDeveloped variant="banner" feature="frpc 进程启动" plan="v0.2.0" />
     <view class="frp__header">
       <view>
-        <text class="frp__title">樱花穿透</text>
-        <text class="frp__subtitle">Sakura NAT-FRP · 跨端联机</text>
+        <text class="frp__title">猫宁穿透</text>
+        <text class="frp__subtitle">MaoNing NAT-FRP · 跨端联机</text>
       </view>
       <view class="frp__actions">
         <McButton v-if="frpStore.isLoggedIn" variant="ghost" size="sm" @click="showFrpc">⬇ frpc</McButton>
@@ -233,8 +233,8 @@ const trafficPercent = computed(() => {
 
     <view v-if="!frpStore.isLoggedIn" class="frp__login-prompt">
       <view class="login-card">
-        <text class="login-card__icon">🌸</text>
-        <text class="login-card__title">登录樱花穿透</text>
+        <text class="login-card__icon">🐱</text>
+        <text class="login-card__title">登录猫宁穿透</text>
         <text class="login-card__desc">支持 frp 节点中转, 0 成本内网穿透, MC 联机神器</text>
         <text class="login-card__desc">没有账号?<text class="login-card__link" @tap="uni.navigateTo({url: '/pages/settings/settings'})">前往注册</text></text>
         <McButton size="lg" glow block @click="showLoginModal = true">🔐 登录</McButton>
@@ -322,7 +322,7 @@ const trafficPercent = computed(() => {
     </template>
 
     <!-- 登录弹窗 -->
-    <McModal v-model:show="showLoginModal" title="登录樱花穿透" width="90%">
+    <McModal v-model:show="showLoginModal" title="登录猫宁穿透" width="90%">
       <view class="login-form">
         <McInput v-model="loginUsername" label="账号" placeholder="用户名" />
         <McInput v-model="loginPassword" type="password" label="密码" placeholder="密码" />
@@ -395,13 +395,13 @@ const trafficPercent = computed(() => {
     <McModal v-model:show="showFrpcModal" title="下载 frpc" width="90%">
       <view class="frpc-modal">
         <text class="frpc-modal__title">frpc 客户端</text>
-        <text class="frpc-modal__desc">在本地 PC/服务器上下载并运行 frpc, 通过配置文件连接樱花穿透节点</text>
+        <text class="frpc-modal__desc">在本地 PC/服务器上下载并运行 frpc, 通过配置文件连接猫宁穿透节点</text>
         <view class="frpc-modal__url">
           <text class="frpc-modal__url-text" user-select="text">{{ frpcInfo.url }}</text>
           <McButton size="sm" @click="copyFrpcUrl">📋 复制</McButton>
         </view>
         <text class="frpc-modal__tip">支持的平台: Windows / Linux / macOS / Android</text>
-        <text class="frpc-modal__tip">下载后解压, 在樱花穿透 App 的「隧道列表」可一键拉取配置</text>
+        <text class="frpc-modal__tip">下载后解压, 在猫宁穿透 App 的「隧道列表」可一键拉取配置</text>
       </view>
     </McModal>
 

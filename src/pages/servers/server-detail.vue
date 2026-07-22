@@ -128,7 +128,7 @@ function copyAddress() {
       </McCard>
 
       <view v-if="tunnel" class="sd__section">
-        <McCard title="🌸 樱花穿透" subtitle="朋友可使用此地址加入">
+        <McCard title="🐱 猫宁穿透" subtitle="朋友可使用此地址加入">
           <view class="tunnel-info">
             <text class="tunnel-info__label">公网地址</text>
             <view class="tunnel-info__addr">

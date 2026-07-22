@@ -87,8 +87,8 @@ export async function buildLaunchCommand(ctx: LaunchContext, gameDir: string = '
     '-Dfml.ignoreInvalidMinecraftCertificates=true',
     '-Dfml.ignorePatchDiscrepancies=true',
     `-Djava.library.path=${nativesDir}`,
-    `-Dminecraft.launcher.brand=sakuram`,
-    `-Dminecraft.launcher.version=0.5.4`,
+    `-Dminecraft.launcher.brand=maoningmc`,
+    `-Dminecraft.launcher.version=0.5.10`,
     `-Dfile.encoding=UTF-8`,
     `-Dsun.stdout.encoding=UTF-8`,
     `-Dsun.stderr.encoding=UTF-8`,
@@ -132,7 +132,7 @@ export async function buildLaunchCommand(ctx: LaunchContext, gameDir: string = '
 export function buildBatchScript(cmd: LaunchCommand, mcVersion: string): string {
   return `@echo off
 chcp 65001 >nul
-title 樱花 MC 启动器 - ${mcVersion}
+title 猫宁MC启动器 - ${mcVersion}
 echo 启动 Minecraft ${mcVersion}...
 echo.
 ${cmd.fullCommand.map(c => `"${c}"`).join(' ')}

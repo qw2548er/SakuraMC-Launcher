@@ -73,15 +73,15 @@ export const useSettingsStore = defineStore('settings', {
     async initAsync() {
       if (!isCordova()) return
       try {
-        const baseGameDir = '/storage/emulated/0/SakuraMC/.minecraft'
+        const baseGameDir = '/storage/emulated/0/MaoNingMC/.minecraft'
         const stored = uni.getStorageSync(STORAGE_KEY)
         if (stored) {
           const parsed = JSON.parse(stored as string)
-          if (parsed.gameDir && !parsed.gameDir.includes('/storage/emulated/0/SakuraMC')) {
+          if (parsed.gameDir && !parsed.gameDir.includes('/storage/emulated/0/MaoNingMC')) {
             return
           }
         }
-        if (!this.gameDir || !this.gameDir.includes('/storage/emulated/0/SakuraMC')) {
+        if (!this.gameDir || !this.gameDir.includes('/storage/emulated/0/MaoNingMC')) {
           this.gameDir = baseGameDir
           this.versionsDir = `${baseGameDir}/versions`
           this.modsDir = `${baseGameDir}/mods`

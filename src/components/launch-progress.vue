@@ -140,7 +140,7 @@ async function runCommandOnAndroid(cmd: string, versionJson: any, gameDir: strin
     appendToTerminal(`[无法执行] ${e.message || e}`)
     appendToTerminal('')
     appendToTerminal('提示: 由于技术限制,当前版本无法直接启动游戏')
-    appendToTerminal('但所有游戏文件已下载到 /storage/emulated/0/SakuraMC/.minecraft/')
+    appendToTerminal('但所有游戏文件已下载到 /storage/emulated/0/MaoNingMC/.minecraft/')
     appendToTerminal('你可以使用 FoldCraftLauncher (FCL) 等启动器直接导入运行')
   }
 }
@@ -166,7 +166,7 @@ async function startLaunch() {
     const gameDir = settingsStore.gameDir || MINECRAFT_DIR
     const source = (settingsStore.downloadSource as any) || 'bmcl'
     
-    appendToTerminal('樱花 MC 启动器')
+    appendToTerminal('猫宁MC启动器')
     appendToTerminal(`版本: ${version.id}`)
     appendToTerminal(`游戏目录: ${gameDir}`)
     appendToTerminal('')
@@ -370,7 +370,7 @@ async function startLaunch() {
         username,
         uuid,
         accessToken,
-        versionType: 'SakuraMC',
+        versionType: 'MaoNingMC',
         width: 854,
         height: 480,
         fullscreen: false,
@@ -456,7 +456,7 @@ async function startLaunch() {
 
 /** 复制完整启动日志到剪贴板 */
 async function copyLaunchLog() {
-  const header = `===== SakuraMC 启动日志 =====\n版本: v${APP_VERSION}\n时间: ${new Date().toLocaleString()}\n设备: ${getPlatform()}\n============================\n\n`
+  const header = `===== MaoNingMC 启动日志 =====\n版本: v${APP_VERSION}\n时间: ${new Date().toLocaleString()}\n设备: ${getPlatform()}\n============================\n\n`
   const log = header + terminalOutput.value
   const ok = await copyText(log)
   if (ok) {

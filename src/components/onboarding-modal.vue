@@ -25,16 +25,16 @@ const requesting = ref(false)
 
 const slides = [
   {
-    icon: '🌸',
-    title: '欢迎使用樱花 MC 启动器',
+    icon: '🐱',
+    title: '欢迎使用猫宁MC启动器',
     subtitle: `v${APP_VERSION}`,
-    body: '跨平台 Minecraft Java 版启动器\n内嵌樱花穿透完整功能\n支持整合包导入、模组管理、截图浏览等',
-    accent: '#ffb7d5'
+    body: '跨平台 Minecraft Java 版启动器\n内嵌猫宁穿透完整功能\n支持整合包导入、模组管理、截图浏览等',
+    accent: '#ff9f43'
   },
   {
     icon: '📂',
     title: '存储权限',
-    body: '启动器需要读写设备存储来:\n  • 下载游戏文件到 /SakuraMC/.minecraft/\n  • 导入整合包、模组、存档\n  • 保存截图、日志、配置\n\n请允许「所有文件访问权限」以获得完整体验。',
+    body: '启动器需要读写设备存储来:\n  • 下载游戏文件到 /MaoNingMC/.minecraft/\n  • 导入整合包、模组、存档\n  • 保存截图、日志、配置\n\n请允许「所有文件访问权限」以获得完整体验。',
     accent: '#8fbbff'
   },
   {

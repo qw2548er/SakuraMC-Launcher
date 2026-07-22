@@ -106,8 +106,8 @@ export async function detectSystemJava(): Promise<JvmInfo[]> {
   try {
     const fs = plus.io.getFileSystemManager()
     const commonPaths = [
-      '/storage/emulated/0/SakuraMC/java',
-      '/data/data/com.sakura.mc/files/java'
+      '/storage/emulated/0/MaoNingMC/java',
+      '/data/data/com.maoning.mc/files/java'
     ]
     for (const basePath of commonPaths) {
       try {
@@ -153,10 +153,10 @@ export async function downloadJavaRuntime(opts: JavaDownloadOptions): Promise<st
 
   await waitForReady()
 
-  const javaDir = '/storage/emulated/0/SakuraMC/java'
+  const javaDir = '/storage/emulated/0/MaoNingMC/java'
   const fileName = `jre${version}-${platform}-${arch}.tar.gz`
   const finalSavePath = savePath || `${javaDir}/${fileName}`
-  const assetsPath = `sakuramc/java/${fileName}`
+  const assetsPath = `maoningmc/java/${fileName}`
 
   await cfs.ensureDir(javaDir)
 

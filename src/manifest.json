@@ -1,9 +1,9 @@
 {
-  "name": "樱花 MC 启动器",
+  "name": "猫宁mc启动器",
   "appid": "__UNI__SAKURAM",
-  "description": "MC 启动器 + 樱花穿透跨端控制台",
-  "versionName": "0.5.3",
-  "versionCode": "21",
+  "description": "猫宁MC启动器 - Minecraft启动器",
+  "versionName": "0.5.10",
+  "versionCode": "22",
   "transformPx": false,
   "app-plus": {
     "usingComponents": true,
@@ -65,7 +65,7 @@
     "usingComponents": true
   },
   "h5": {
-    "title": "樱花 MC 启动器",
+    "title": "猫宁mc启动器",
     "router": {
       "mode": "hash",
       "base": "./"

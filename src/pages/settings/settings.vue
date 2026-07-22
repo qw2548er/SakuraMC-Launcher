@@ -44,8 +44,8 @@ function onSourceChange(e: any) {
 // 主题 picker
 const themeOptions = [
   { label: '跟随系统', value: 'auto' },
-  { label: '樱花粉 (深色)', value: 'dark' },
-  { label: '樱花粉 (浅色)', value: 'light' }
+  { label: '猫宁橙 (深色)', value: 'dark' },
+  { label: '猫宁橙 (浅色)', value: 'light' }
 ]
 const themeIndex = computed(() => themeOptions.findIndex(o => o.value === settingsStore.theme))
 
@@ -143,7 +143,7 @@ const pathConfigLabel = ref('')
 const pathConfigDraft = ref('')
 
 const pathConfigs = computed(() => [
-  { key: 'gameDir', label: 'SakuraMC 游戏目录', icon: '📁', value: settingsStore.gameDir || defaultGameDir.value },
+  { key: 'gameDir', label: 'MaoNingMC 游戏目录', icon: '📁', value: settingsStore.gameDir || defaultGameDir.value },
   { key: 'versionsDir', label: '版本目录', icon: '📦', value: settingsStore.versionsDir || `${settingsStore.gameDir || defaultGameDir.value}/versions` },
   { key: 'modsDir', label: '模组目录', icon: '🧩', value: settingsStore.modsDir || `${settingsStore.gameDir || defaultGameDir.value}/mods` },
   { key: 'resourcepacksDir', label: '资源包目录', icon: '🎨', value: settingsStore.resourcepacksDir || `${settingsStore.gameDir || defaultGameDir.value}/resourcepacks` },
@@ -826,10 +826,10 @@ function selectJavaVersion(id: string) {
         </view>
         
         <view class="settings__about" @tap="uni.navigateTo({ url: '/pages/about/about' })">
-          <text class="settings__about-logo">🌸</text>
-          <text class="settings__about-name">樱花 MC 启动器</text>
+          <text class="settings__about-logo">🐱</text>
+          <text class="settings__about-name">猫宁MC启动器</text>
           <text class="settings__about-version">v{{ APP_VERSION }}</text>
-          <text class="settings__about-desc">内嵌樱花穿透完整功能 · 点击查看关于</text>
+          <text class="settings__about-desc">内嵌猫宁穿透完整功能 · 点击查看关于</text>
         </view>
       </view>
     </scroll-view>
