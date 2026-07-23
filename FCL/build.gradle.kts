@@ -108,8 +108,9 @@ androidComponents {
         variant.outputs.forEach { output ->
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
                 (output.getFilter(ABI)?.identifier ?: "all").let { abi ->
+                    // 使用 ASCII 安全文件名，避免 GitHub Release 上传时中文字符被剥离
                     output.outputFileName =
-                        "猫宁mc启动器-${variant.buildType}-${project.android.defaultConfig.versionName}-${abi}.apk"
+                        "MaoningMCLauncher-${variant.buildType}-${project.android.defaultConfig.versionName}-${abi}.apk"
                 }
 
                 val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
