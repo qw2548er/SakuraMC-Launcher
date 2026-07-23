@@ -29,9 +29,9 @@ android {
     signingConfigs {
         create("FCLKey") {
             storeFile = file("../key-store.jks")
-            storePassword = pwd
+            storePassword = pwd ?: "FCL-Debug"
             keyAlias = "FCL-Key"
-            keyPassword = pwd
+            keyPassword = pwd ?: "FCL-Debug"
         }
         create("FCLDebugKey") {
             storeFile = file("../debug-key.jks")
@@ -52,7 +52,7 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("FCLKey")
+            signingConfig = if (pwd != null) signingConfigs.getByName("FCLKey") else signingConfigs.getByName("FCLDebugKey")
         }
         create("fordebug") {
             initWith(getByName("debug"))

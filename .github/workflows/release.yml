@@ -5,6 +5,9 @@ on:
     tags:
       - "*"
 
+permissions:
+  contents: write
+
 jobs:
   release_build:
     name: Build for ${{matrix.arch}}
@@ -49,6 +52,5 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          token: ${{ secrets.TOKEN }}
           files: |
             FCL/build/outputs/apk/release/*.apk
