@@ -69,7 +69,7 @@
             android:layout_marginStart="10dp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/button_download_dependencies"
+            android:text="@string/button_one_click_download_deps"
             android:textSize="12sp"
             android:id="@+id/download_dependencies"/>
 

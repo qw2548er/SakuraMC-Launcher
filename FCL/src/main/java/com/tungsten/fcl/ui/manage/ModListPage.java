@@ -287,7 +287,9 @@ public class ModListPage extends FCLCommonPage implements ManageUI.VersionLoadab
     }
 
     public void refresh() {
-        loadMods(modManager);
+        if (modManager != null) {
+            loadMods(modManager);
+        }
     }
 
     private CompletableFuture<?> loadMods(ModManager modManager) {

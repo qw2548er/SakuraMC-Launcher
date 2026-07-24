@@ -42,11 +42,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tungsten.fcl"
+        applicationId = "com.tungsten.maoning"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1321
-        versionName = "1.4.1"
+        versionCode = 1322
+        versionName = "1.4.2"
     }
 
     buildTypes {

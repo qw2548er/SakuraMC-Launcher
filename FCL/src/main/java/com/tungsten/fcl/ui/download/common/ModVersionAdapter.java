@@ -15,6 +15,7 @@ import com.tungsten.fcl.R;
 import com.tungsten.fcl.setting.Profile;
 import com.tungsten.fcl.setting.Profiles;
 import com.tungsten.fcl.ui.TaskDialog;
+import com.tungsten.fcl.ui.manage.ManagePageManager;
 import com.tungsten.fcl.util.TaskCancellationAction;
 import com.tungsten.fclcore.download.LibraryAnalyzer;
 import com.tungsten.fclcore.mod.ModLoaderType;
@@ -117,7 +118,7 @@ public class ModVersionAdapter extends FCLAdapter {
 
         viewHolder.downloadDependencies.setVisibility(View.VISIBLE);
         viewHolder.downloadDependencies.setEnabled(true);
-        viewHolder.downloadDependencies.setText(getContext().getString(R.string.button_download_dependencies));
+        viewHolder.downloadDependencies.setText(getContext().getString(R.string.button_one_click_download_deps));
         viewHolder.downloadDependencies.setOnClickListener(v -> downloadDependencies(version));
     }
 
@@ -146,12 +147,25 @@ public class ModVersionAdapter extends FCLAdapter {
                             }
                         } else {
                             Toast.makeText(getContext(), getContext().getString(R.string.message_success), Toast.LENGTH_SHORT).show();
+                            // 下载成功后刷新管理模组列表
+                            refreshModList();
                         }
                     }).executor();
             taskDialog.setExecutor(executor);
             taskDialog.show();
             executor.start();
         });
+    }
+
+    private void refreshModList() {
+        try {
+            ManagePageManager manager = ManagePageManager.instance;
+            if (manager != null) {
+                manager.modListPage.refresh();
+            }
+        } catch (Throwable t) {
+            // 静默失败，不影响下载成功的提示
+        }
     }
 
     private List<Task<?>> buildDependencyDownloadTasks(List<RemoteMod.Dependency> dependencies) throws IOException {

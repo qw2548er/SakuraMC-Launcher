@@ -131,6 +131,7 @@
     <string name="button_copy">Copy</string>
     <string name="button_download">Download</string>
     <string name="button_download_dependencies">Download Dependencies</string>
+    <string name="button_one_click_download_deps">一键下载依赖</string>
     <string name="button_export">Export</string>
     <string name="button_hide">Hide</string>
     <string name="button_install">Install</string>

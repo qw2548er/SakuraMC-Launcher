@@ -40,7 +40,7 @@ class ManagePageManager(
             R.layout.page_manage_auto_install
         )
     }
-    private val modListPage: ModListPage by lazy {
+    val modListPage: ModListPage by lazy {
         ModListPage(
             context,
             PAGE_ID_MANAGE_MOD,
