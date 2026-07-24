@@ -187,7 +187,7 @@ public class ModVersionAdapter extends FCLAdapter {
         return tasks;
     }
 
-    private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders, RemoteMod.RemoteModRepository repository) throws IOException {
+    private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders, RemoteModRepository repository) throws IOException {
         Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository);
         if (!currentGameVersion.isEmpty()) {
             stream = stream.filter(v -> v.getGameVersions().contains(currentGameVersion));
