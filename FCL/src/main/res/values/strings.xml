@@ -130,6 +130,7 @@
     <string name="button_cancel">Cancel</string>
     <string name="button_copy">Copy</string>
     <string name="button_download">Download</string>
+    <string name="button_download_dependencies">Download Dependencies</string>
     <string name="button_export">Export</string>
     <string name="button_hide">Hide</string>
     <string name="button_install">Install</string>
@@ -806,6 +807,7 @@
     <string name="mods_dependency_include">built-in pre-mod (already packaged in the mod file by the author, no need to download separately)</string>
     <string name="mods_dependency_incompatible">incompatible mod (installing both the mod and the mod being downloaded will cause the game to fail to launch)</string>
     <string name="mods_dependency_broken">Broken pre-mod (This premod used to exist on the mod repository, but is now deleted.) Try a different download source.</string>
+    <string name="mods_dependency_none_required">No required dependencies to download</string>
     <string name="mods_disable">Disable</string>
     <string name="mods_download">Mod Download</string>
     <string name="mods_download_title">Mod Download - %1s</string>

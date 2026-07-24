@@ -12,14 +12,22 @@ import android.widget.Toast;
 import com.tungsten.fcl.R;
 import com.tungsten.fcl.setting.Profile;
 import com.tungsten.fcl.ui.PageManager;
+import com.tungsten.fcl.ui.TaskDialog;
 import com.tungsten.fcl.ui.UIManager;
 import com.tungsten.fcl.ui.download.DownloadPageManager;
 import com.tungsten.fcl.util.AndroidUtils;
+import com.tungsten.fcl.util.TaskCancellationAction;
+import com.tungsten.fclcore.download.LibraryAnalyzer;
+import com.tungsten.fclcore.mod.ModLoaderType;
 import com.tungsten.fclcore.mod.RemoteMod;
+import com.tungsten.fclcore.task.FileDownloadTask;
 import com.tungsten.fclcore.task.Schedulers;
 import com.tungsten.fclcore.task.Task;
+import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.util.Lang;
 import com.tungsten.fclcore.util.Pair;
+import com.tungsten.fclcore.util.io.NetworkUtils;
+import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog;
 import com.tungsten.fcllibrary.component.theme.ThemeEngine;
 import com.tungsten.fcllibrary.component.ui.FCLTempPage;
 import com.tungsten.fcllibrary.component.view.FCLButton;
@@ -30,10 +38,19 @@ import com.tungsten.fcllibrary.component.view.FCLTextView;
 import com.tungsten.fcllibrary.component.view.FCLUILayout;
 import com.tungsten.fcllibrary.util.ConvertUtils;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickListener {
 
@@ -61,6 +78,7 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
     private FCLProgressBar progressBar;
     private FCLImageButton retry;
     private FCLButton download;
+    private FCLButton downloadDependencies;
     private FCLButton saveAs;
     private FCLButton cancel;
     private FCLButton back;
@@ -154,11 +172,13 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
         progressBar = findViewById(R.id.progress);
         retry = findViewById(R.id.retry);
         download = findViewById(R.id.download);
+        downloadDependencies = findViewById(R.id.download_dependencies);
         saveAs = findViewById(R.id.save_as);
         cancel = findViewById(R.id.cancel);
         back = findViewById(R.id.back);
         retry.setOnClickListener(this);
         download.setOnClickListener(this);
+        downloadDependencies.setOnClickListener(this);
         saveAs.setOnClickListener(this);
         cancel.setOnClickListener(this);
         back.setOnClickListener(this);
@@ -213,6 +233,9 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
         if (view == download) {
             lastPage.download(modVersion);
         }
+        if (view == downloadDependencies) {
+            downloadAllDependencies();
+        }
         if (view == saveAs) {
             lastPage.saveAs(modVersion);
         }
@@ -225,5 +248,95 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
                 UIManager.getInstance().onBackPressed();
             }
         }
+    }
+
+    private void downloadAllDependencies() {
+        List<RemoteMod.Dependency> dependencies = modVersion.getDependencies().stream()
+                .filter(d -> d.getType() == RemoteMod.DependencyType.REQUIRED
+                        || d.getType() == RemoteMod.DependencyType.TOOL)
+                .collect(Collectors.toList());
+
+        if (dependencies.isEmpty()) {
+            Toast.makeText(getContext(), getContext().getString(R.string.mods_dependency_none_required), Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        TaskDialog taskDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
+        taskDialog.setTitle(getContext().getString(R.string.message_downloading));
+        Schedulers.androidUIThread().execute(() -> {
+            TaskExecutor executor = Task.supplyAsync(() -> buildDependencyDownloadTasks(dependencies))
+                    .thenComposeAsync(tasks -> Task.allOf(tasks))
+                    .whenComplete(Schedulers.androidUIThread(), (result, exception) -> {
+                        if (exception != null) {
+                            if (exception instanceof CancellationException) {
+                                Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
+                            } else {
+                                FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(getContext());
+                                builder.setAlertLevel(FCLAlertDialog.AlertLevel.ALERT);
+                                builder.setCancelable(false);
+                                builder.setTitle(getContext().getString(R.string.install_failed_downloading));
+                                builder.setMessage(exception.getMessage());
+                                builder.setNegativeButton(getContext().getString(com.tungsten.fcllibrary.R.string.dialog_positive), null);
+                                builder.create().show();
+                            }
+                        } else {
+                            Toast.makeText(getContext(), getContext().getString(R.string.message_success), Toast.LENGTH_SHORT).show();
+                        }
+                    }).executor();
+            taskDialog.setExecutor(executor);
+            taskDialog.show();
+            executor.start();
+        });
+    }
+
+    private List<Task<?>> buildDependencyDownloadTasks(List<RemoteMod.Dependency> dependencies) throws IOException {
+        Profile profile = version.getProfile();
+        String selectedVersion = version.getVersion();
+        String currentGameVersion = "";
+        Set<ModLoaderType> currentLoaders = Collections.emptySet();
+        if (profile.getRepository().hasVersion(selectedVersion)) {
+            LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(
+                    profile.getRepository().getResolvedPreservingPatchesVersion(selectedVersion),
+                    selectedVersion);
+            currentLoaders = analyzer.getModLoaders();
+            currentGameVersion = analyzer.getVersion(LibraryAnalyzer.LibraryType.MINECRAFT).orElse("");
+        }
+
+        Path runDirectory = profile.getRepository().hasVersion(selectedVersion)
+                ? profile.getRepository().getRunDirectory(selectedVersion).toPath()
+                : profile.getRepository().getBaseDirectory().toPath();
+        Path modsDir = runDirectory.resolve("mods");
+
+        List<Task<?>> tasks = new ArrayList<>();
+        for (RemoteMod.Dependency dependency : dependencies) {
+            RemoteMod mod = dependency.load();
+            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(mod, currentGameVersion, currentLoaders);
+            if (bestVersion.isPresent()) {
+                RemoteMod.Version v = bestVersion.get();
+                Path dest = modsDir.resolve(v.getFile().getFilename());
+                FileDownloadTask task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
+                task.setName(v.getName());
+                tasks.add(task);
+            }
+        }
+        return tasks;
+    }
+
+    private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders) throws IOException {
+        Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository);
+        if (!currentGameVersion.isEmpty()) {
+            stream = stream.filter(v -> v.getGameVersions().contains(currentGameVersion));
+        }
+        if (!currentLoaders.isEmpty()) {
+            stream = stream.filter(v -> {
+                for (ModLoaderType loader : v.getLoaders()) {
+                    if (currentLoaders.contains(loader)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        }
+        return stream.max(Comparator.comparing(RemoteMod.Version::getDatePublished));
     }
 }
