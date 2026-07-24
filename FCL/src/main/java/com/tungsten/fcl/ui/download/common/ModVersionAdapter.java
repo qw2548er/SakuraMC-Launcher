@@ -19,6 +19,7 @@ import com.tungsten.fcl.util.TaskCancellationAction;
 import com.tungsten.fclcore.download.LibraryAnalyzer;
 import com.tungsten.fclcore.mod.ModLoaderType;
 import com.tungsten.fclcore.mod.RemoteMod;
+import com.tungsten.fclcore.mod.RemoteModRepository;
 import com.tungsten.fclcore.task.FileDownloadTask;
 import com.tungsten.fclcore.task.Schedulers;
 import com.tungsten.fclcore.task.Task;
@@ -174,7 +175,7 @@ public class ModVersionAdapter extends FCLAdapter {
         List<Task<?>> tasks = new ArrayList<>();
         for (RemoteMod.Dependency dependency : dependencies) {
             RemoteMod mod = dependency.load();
-            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(mod, currentGameVersion, currentLoaders);
+            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(mod, currentGameVersion, currentLoaders, dependency.getRemoteModRepository());
             if (bestVersion.isPresent()) {
                 RemoteMod.Version v = bestVersion.get();
                 Path dest = modsDir.resolve(v.getFile().getFilename());
@@ -186,8 +187,8 @@ public class ModVersionAdapter extends FCLAdapter {
         return tasks;
     }
 
-    private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders) throws IOException {
-        Stream<RemoteMod.Version> stream = mod.getData().loadVersions(null);
+    private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders, RemoteMod.RemoteModRepository repository) throws IOException {
+        Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository);
         if (!currentGameVersion.isEmpty()) {
             stream = stream.filter(v -> v.getGameVersions().contains(currentGameVersion));
         }

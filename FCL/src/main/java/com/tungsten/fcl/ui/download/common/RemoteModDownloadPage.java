@@ -9,6 +9,8 @@ import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AppCompatDialog;
+
 import com.tungsten.fcl.R;
 import com.tungsten.fcl.setting.Profile;
 import com.tungsten.fcl.ui.PageManager;
@@ -323,7 +325,7 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
     }
 
     private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders) throws IOException {
-        Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository);
+        Stream<RemoteMod.Version> stream = mod.getData().loadVersions(downloadPage.getRepository());
         if (!currentGameVersion.isEmpty()) {
             stream = stream.filter(v -> v.getGameVersions().contains(currentGameVersion));
         }
