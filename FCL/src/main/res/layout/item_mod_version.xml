@@ -64,6 +64,15 @@
 
         </androidx.appcompat.widget.LinearLayoutCompat>
 
+        <com.tungsten.fcllibrary.component.view.FCLButton
+            app:ripple="true"
+            android:layout_marginStart="10dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/button_download_dependencies"
+            android:textSize="12sp"
+            android:id="@+id/download_dependencies"/>
+
     </com.tungsten.fcllibrary.component.view.FCLLinearLayout>
 
 </androidx.appcompat.widget.LinearLayoutCompat>
