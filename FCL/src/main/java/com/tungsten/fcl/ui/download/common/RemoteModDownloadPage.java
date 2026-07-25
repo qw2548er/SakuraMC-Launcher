@@ -342,7 +342,7 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
                     Logging.LOG.log(Level.WARNING, "未找到匹配的依赖版本: " + mod.getTitle());
                 }
             } catch (Throwable e) {
-                Logging.LOG.log(Level.WARNING, "构建依赖下载任务失败: " + dependency.getName(), e);
+                Logging.LOG.log(Level.WARNING, "构建依赖下载任务失败: " + dependency.getId(), e);
             }
         }
 
