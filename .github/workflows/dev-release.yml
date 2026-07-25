@@ -1,0 +1,121 @@
+name: Dev Release
+
+# 每次代码推送到主分支后，自动构建 APK 并发布到 Releases（滚动 "latest" 预发布）
+on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+    paths-ignore:
+      - ".github/workflows/**"
+      - "**.md"
+      - "version_map.json"
+      - "LICENSE"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: ["all", "arm", "arm64", "x86", "x86_64"]
+      fail-fast: false
+    env:
+      FCL_KEYSTORE_PASSWORD: ${{ secrets.FCL_KEYSTORE_PASSWORD }}
+      CURSE_API_KEY: ${{ secrets.CURSE_API_KEY }}
+      OAUTH_API_KEY: ${{ secrets.OAUTH_API_KEY }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: 17
+          cache: "gradle"
+
+      - name: Build ${{ matrix.arch }} .apk
+        run: |
+          chmod +x gradlew
+          ./gradlew assemblerelease -Darch=${{ matrix.arch }} --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.arch }}
+          path: FCL/build/outputs/apk/release/*.apk
+          retention-days: 7
+
+  release:
+    name: Publish Rolling Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: apk-*
+          merge-multiple: true
+          path: apks
+
+      - name: List downloaded APKs
+        run: ls -lah apks
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "body<<$EOF" >> "$GITHUB_OUTPUT"
+          echo "## 开发版自动构建" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "**构建时间**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_OUTPUT"
+          echo "**触发分支**: ${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+          echo "**最新提交**: ${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "### 最近提交记录" >> "$GITHUB_OUTPUT"
+          git log --pretty=format:'- %h %s' -n 10 >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "> 此版本由 GitHub Actions 在推送主分支后自动构建，可能不稳定。" >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Delete previous rolling release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+
+      - name: Create rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Dev Build (latest)"
+          body: ${{ steps.notes.outputs.body }}
+          files: apks/*.apk
+          prerelease: true
+          make_latest: "false"
+          token: ${{ secrets.GITHUB_TOKEN }}

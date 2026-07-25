@@ -25,6 +25,7 @@ import com.tungsten.fclcore.task.FileDownloadTask;
 import com.tungsten.fclcore.task.Schedulers;
 import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
+import com.tungsten.fclcore.util.Logging;
 import com.tungsten.fclcore.util.io.NetworkUtils;
 import com.tungsten.fcllibrary.component.FCLAdapter;
 import com.tungsten.fcllibrary.component.theme.ThemeEngine;
@@ -45,6 +46,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -143,11 +145,11 @@ public class ModVersionAdapter extends FCLAdapter {
                             if (exception instanceof CancellationException) {
                                 Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
                             } else {
+                                Logging.LOG.log(Level.WARNING, "依赖下载失败", exception);
                                 Toast.makeText(getContext(), getContext().getString(R.string.download_failed_refresh), Toast.LENGTH_SHORT).show();
                             }
                         } else {
-                            Toast.makeText(getContext(), getContext().getString(R.string.message_success), Toast.LENGTH_SHORT).show();
-                            // 下载成功后刷新管理模组列表
+                            Toast.makeText(getContext(), getContext().getString(R.string.install_success), Toast.LENGTH_SHORT).show();
                             refreshModList();
                         }
                     }).executor();
@@ -162,9 +164,11 @@ public class ModVersionAdapter extends FCLAdapter {
             ManagePageManager manager = ManagePageManager.getInstance();
             if (manager != null) {
                 manager.getModListPage().refresh();
+            } else {
+                Logging.LOG.log(Level.INFO, "ManagePageManager 未初始化，跳过模组列表刷新");
             }
         } catch (Throwable t) {
-            // 静默失败，不影响下载成功的提示
+            Logging.LOG.log(Level.WARNING, "刷新模组列表失败", t);
         }
     }
 
@@ -181,6 +185,8 @@ public class ModVersionAdapter extends FCLAdapter {
             currentGameVersion = analyzer.getVersion(LibraryAnalyzer.LibraryType.MINECRAFT).orElse("");
         }
 
+        Logging.LOG.log(Level.INFO, "开始构建依赖下载任务: 游戏版本=" + currentGameVersion + ", 加载器=" + currentLoaders);
+
         Path runDirectory = profile.getRepository().hasVersion(selectedVersion)
                 ? profile.getRepository().getRunDirectory(selectedVersion).toPath()
                 : profile.getRepository().getBaseDirectory().toPath();
@@ -188,28 +194,64 @@ public class ModVersionAdapter extends FCLAdapter {
 
         List<Task<?>> tasks = new ArrayList<>();
         for (RemoteMod.Dependency dependency : dependencies) {
-            RemoteMod mod = dependency.load();
-            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(mod, currentGameVersion, currentLoaders, dependency.getRemoteModRepository());
-            if (bestVersion.isPresent()) {
-                RemoteMod.Version v = bestVersion.get();
-                Path dest = modsDir.resolve(v.getFile().getFilename());
-                FileDownloadTask task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
-                task.setName(v.getName());
-                tasks.add(task);
+            try {
+                RemoteMod mod = dependency.load();
+                Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(
+                        mod, currentGameVersion, currentLoaders, dependency.getRemoteModRepository());
+                if (bestVersion.isPresent()) {
+                    RemoteMod.Version v = bestVersion.get();
+                    Path dest = modsDir.resolve(v.getFile().getFilename());
+                    FileDownloadTask task = new FileDownloadTask(
+                            NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
+                    task.setName(v.getName());
+                    tasks.add(task);
+                    Logging.LOG.log(Level.INFO, "依赖下载任务已创建: " + v.getName() + " -> " + dest);
+                } else {
+                    Logging.LOG.log(Level.WARNING, "未找到匹配的依赖版本: " + mod.getTitle());
+                }
+            } catch (Throwable e) {
+                Logging.LOG.log(Level.WARNING, "构建依赖下载任务失败: " + dependency.getName(), e);
             }
         }
+
+        Logging.LOG.log(Level.INFO, "依赖下载任务构建完成: 共 " + tasks.size() + " 个任务");
         return tasks;
     }
 
-    private Optional<RemoteMod.Version> selectBestDependencyVersion(RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders, RemoteModRepository repository) throws IOException {
+    private Optional<RemoteMod.Version> selectBestDependencyVersion(
+            RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders,
+            RemoteModRepository repository) throws IOException {
         Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository);
-        if (!currentGameVersion.isEmpty()) {
-            stream = stream.filter(v -> v.getGameVersions().contains(currentGameVersion));
+        List<RemoteMod.Version> allVersions = stream.collect(Collectors.toList());
+
+        // 第一轮：严格匹配游戏版本 + 加载器
+        Optional<RemoteMod.Version> result = filterAndSelect(allVersions, currentGameVersion, currentLoaders);
+
+        // 第二轮：仅匹配加载器（放宽游戏版本限制）
+        if (result.isEmpty() && !currentLoaders.isEmpty()) {
+            Logging.LOG.log(Level.INFO, "严格匹配未找到版本，尝试仅匹配加载器");
+            result = filterAndSelect(allVersions, "", currentLoaders);
         }
-        if (!currentLoaders.isEmpty()) {
+
+        // 第三轮：无任何过滤，取最新版本
+        if (result.isEmpty()) {
+            Logging.LOG.log(Level.INFO, "加载器匹配未找到版本，取最新版本");
+            result = allVersions.stream().max(Comparator.comparing(RemoteMod.Version::getDatePublished));
+        }
+
+        return result;
+    }
+
+    private Optional<RemoteMod.Version> filterAndSelect(
+            List<RemoteMod.Version> versions, String gameVersion, Set<ModLoaderType> loaders) {
+        Stream<RemoteMod.Version> stream = versions.stream();
+        if (!gameVersion.isEmpty()) {
+            stream = stream.filter(v -> v.getGameVersions().contains(gameVersion));
+        }
+        if (!loaders.isEmpty()) {
             stream = stream.filter(v -> {
                 for (ModLoaderType loader : v.getLoaders()) {
-                    if (currentLoaders.contains(loader)) {
+                    if (loaders.contains(loader)) {
                         return true;
                     }
                 }
