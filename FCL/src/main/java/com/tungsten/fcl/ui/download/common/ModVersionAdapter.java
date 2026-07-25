@@ -159,7 +159,7 @@ public class ModVersionAdapter extends FCLAdapter {
 
     private void refreshModList() {
         try {
-            ManagePageManager manager = ManagePageManager.instance;
+            ManagePageManager manager = ManagePageManager.getInstance();
             if (manager != null) {
                 manager.getModListPage().refresh();
             }
