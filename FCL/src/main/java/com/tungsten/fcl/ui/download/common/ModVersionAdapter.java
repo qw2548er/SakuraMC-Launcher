@@ -161,7 +161,7 @@ public class ModVersionAdapter extends FCLAdapter {
         try {
             ManagePageManager manager = ManagePageManager.instance;
             if (manager != null) {
-                manager.modListPage.refresh();
+                manager.getModListPage().refresh();
             }
         } catch (Throwable t) {
             // 静默失败，不影响下载成功的提示
