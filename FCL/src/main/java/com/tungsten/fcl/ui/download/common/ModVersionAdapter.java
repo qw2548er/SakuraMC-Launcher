@@ -25,6 +25,7 @@ import com.tungsten.fclcore.task.FileDownloadTask;
 import com.tungsten.fclcore.task.Schedulers;
 import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
+import com.tungsten.fclcore.util.DigestUtils;
 import com.tungsten.fclcore.util.Logging;
 import com.tungsten.fclcore.util.io.NetworkUtils;
 import com.tungsten.fcllibrary.component.FCLAdapter;
@@ -34,6 +35,7 @@ import com.tungsten.fcllibrary.component.view.FCLLinearLayout;
 import com.tungsten.fcllibrary.component.view.FCLTextView;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -201,6 +203,12 @@ public class ModVersionAdapter extends FCLAdapter {
                 if (bestVersion.isPresent()) {
                     RemoteMod.Version v = bestVersion.get();
                     Path dest = modsDir.resolve(v.getFile().getFilename());
+
+                    if (isLocalFileValid(dest, v.getFile().getIntegrityCheck())) {
+                        Logging.LOG.log(Level.INFO, "本地已存在且哈希匹配，跳过下载: " + v.getName() + " -> " + dest);
+                        continue;
+                    }
+
                     FileDownloadTask task = new FileDownloadTask(
                             NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
                     task.setName(v.getName());
@@ -216,6 +224,22 @@ public class ModVersionAdapter extends FCLAdapter {
 
         Logging.LOG.log(Level.INFO, "依赖下载任务构建完成: 共 " + tasks.size() + " 个任务");
         return tasks;
+    }
+
+    private boolean isLocalFileValid(Path dest, FileDownloadTask.IntegrityCheck integrityCheck) {
+        try {
+            if (dest == null || !Files.exists(dest)) {
+                return false;
+            }
+            if (integrityCheck == null) {
+                return false;
+            }
+            String localHash = DigestUtils.digestToString(integrityCheck.getAlgorithm(), dest);
+            return integrityCheck.getChecksum().equalsIgnoreCase(localHash);
+        } catch (Throwable e) {
+            Logging.LOG.log(Level.WARNING, "本地文件哈希校验失败: " + dest, e);
+            return false;
+        }
     }
 
     private Optional<RemoteMod.Version> selectBestDependencyVersion(
