@@ -354,10 +354,19 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
         Stream<RemoteMod.Version> stream = mod.getData().loadVersions(downloadPage.getRepository());
         List<RemoteMod.Version> allVersions = stream.collect(Collectors.toList());
 
+        // 第一轮：严格匹配游戏版本 + 加载器
         Optional<RemoteMod.Version> result = filterAndSelect(allVersions, currentGameVersion, currentLoaders);
 
+        // 第二轮：仅匹配加载器（放宽游戏版本限制）
+        if (result.isEmpty() && !currentLoaders.isEmpty()) {
+            Logging.LOG.log(Level.INFO, "严格匹配未找到版本，尝试仅匹配加载器");
+            result = filterAndSelect(allVersions, "", currentLoaders);
+        }
+
+        // 第三轮：无任何过滤，取最新版本
         if (result.isEmpty()) {
-            Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 未找到与游戏版本 " + currentGameVersion + " 兼容的版本");
+            Logging.LOG.log(Level.INFO, "加载器匹配未找到版本，取最新版本");
+            result = allVersions.stream().max(Comparator.comparing(RemoteMod.Version::getDatePublished));
         }
 
         return result;
@@ -366,11 +375,9 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
     private Optional<RemoteMod.Version> filterAndSelect(
             List<RemoteMod.Version> versions, String gameVersion, Set<ModLoaderType> loaders) {
         Stream<RemoteMod.Version> stream = versions.stream();
-
         if (!gameVersion.isEmpty()) {
-            stream = stream.filter(v -> matchesGameVersion(v.getGameVersions(), gameVersion));
+            stream = stream.filter(v -> v.getGameVersions().contains(gameVersion));
         }
-
         if (!loaders.isEmpty()) {
             stream = stream.filter(v -> {
                 for (ModLoaderType loader : v.getLoaders()) {
@@ -382,27 +389,5 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
             });
         }
         return stream.max(Comparator.comparing(RemoteMod.Version::getDatePublished));
-    }
-
-    private boolean matchesGameVersion(List<String> supportedVersions, String targetVersion) {
-        if (supportedVersions == null || supportedVersions.isEmpty()) {
-            return false;
-        }
-
-        for (String version : supportedVersions) {
-            if (version.equals(targetVersion)) {
-                return true;
-            }
-
-            if (version.startsWith(targetVersion + "-")) {
-                return true;
-            }
-
-            if (targetVersion.startsWith(version + "-")) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
