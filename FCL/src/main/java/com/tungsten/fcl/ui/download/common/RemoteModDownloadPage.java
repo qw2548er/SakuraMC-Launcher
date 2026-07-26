@@ -48,6 +48,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Objects;
@@ -328,34 +329,73 @@ public class RemoteModDownloadPage extends FCLTempPage implements View.OnClickLi
                 : profile.getRepository().getBaseDirectory().toPath();
         Path modsDir = runDirectory.resolve("mods");
 
+        Set<String> downloadedIds = new HashSet<>();
         List<Task<?>> tasks = new ArrayList<>();
+
         for (RemoteMod.Dependency dependency : dependencies) {
-            try {
-                RemoteMod mod = dependency.load();
-                Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(mod, currentGameVersion, currentLoaders);
-                if (bestVersion.isPresent()) {
-                    RemoteMod.Version v = bestVersion.get();
-                    Path dest = modsDir.resolve(v.getFile().getFilename());
-
-                    if (isLocalFileValid(dest, v.getFile().getIntegrityCheck())) {
-                        Logging.LOG.log(Level.INFO, "本地已存在且哈希匹配，跳过下载: " + v.getName() + " -> " + dest);
-                        continue;
-                    }
-
-                    FileDownloadTask task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
-                    task.setName(v.getName());
-                    tasks.add(task);
-                    Logging.LOG.log(Level.INFO, "依赖下载任务已创建: " + v.getName() + " -> " + dest);
-                } else {
-                    Logging.LOG.log(Level.WARNING, "未找到匹配的依赖版本: " + mod.getTitle());
-                }
-            } catch (Throwable e) {
-                Logging.LOG.log(Level.WARNING, "构建依赖下载任务失败: " + dependency.getId(), e);
-            }
+            downloadDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir, downloadedIds, tasks, 0);
         }
 
         Logging.LOG.log(Level.INFO, "依赖下载任务构建完成: 共 " + tasks.size() + " 个任务");
         return tasks;
+    }
+
+    private void downloadDependencyRecursively(RemoteMod.Dependency dependency, String currentGameVersion,
+                                                Set<ModLoaderType> currentLoaders, Path modsDir,
+                                                Set<String> downloadedIds, List<Task<?>> tasks, int depth) {
+        String dependencyId = dependency.getId();
+        if (downloadedIds.contains(dependencyId)) {
+            Logging.LOG.log(Level.FINE, "依赖已处理过，跳过: " + dependencyId);
+            return;
+        }
+
+        try {
+            RemoteMod mod = dependency.load();
+            Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "处理依赖: " + mod.getTitle() + " (" + dependencyId + ")");
+
+            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(mod, currentGameVersion, currentLoaders);
+
+            if (bestVersion.isPresent()) {
+                RemoteMod.Version v = bestVersion.get();
+                Path dest = modsDir.resolve(v.getFile().getFilename());
+
+                if (isLocalFileValid(dest, v.getFile().getIntegrityCheck())) {
+                    Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "本地已存在且哈希匹配，跳过下载: " + v.getName());
+                    downloadedIds.add(dependencyId);
+
+                    List<RemoteMod.Dependency> nestedDependencies = v.getDependencies();
+                    if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
+                        Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "递归下载 " + nestedDependencies.size() + " 个子依赖");
+                        for (RemoteMod.Dependency nested : nestedDependencies) {
+                            downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
+                                    modsDir, downloadedIds, tasks, depth + 1);
+                        }
+                    }
+                    return;
+                }
+
+                FileDownloadTask task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
+                task.setName(v.getName());
+                tasks.add(task);
+                downloadedIds.add(dependencyId);
+                Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "创建下载任务: " + v.getName() + " -> " + dest);
+
+                List<RemoteMod.Dependency> nestedDependencies = v.getDependencies();
+                if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
+                    Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "递归下载 " + nestedDependencies.size() + " 个子依赖");
+                    for (RemoteMod.Dependency nested : nestedDependencies) {
+                        downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
+                                modsDir, downloadedIds, tasks, depth + 1);
+                    }
+                }
+            } else {
+                Logging.LOG.log(Level.WARNING, "[" + "  ".repeat(depth) + "未找到与游戏版本 " + currentGameVersion + " 匹配的版本，跳过: " + mod.getTitle());
+                downloadedIds.add(dependencyId);
+            }
+        } catch (Throwable e) {
+            Logging.LOG.log(Level.WARNING, "[" + "  ".repeat(depth) + "处理依赖失败: " + dependencyId, e);
+            downloadedIds.add(dependencyId);
+        }
     }
 
     private boolean isLocalFileValid(Path dest, FileDownloadTask.IntegrityCheck integrityCheck) {
