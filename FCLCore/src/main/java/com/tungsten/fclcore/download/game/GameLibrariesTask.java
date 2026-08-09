@@ -21,6 +21,7 @@ import com.tungsten.fclcore.download.AbstractDependencyManager;
 import com.tungsten.fclcore.download.LibraryAnalyzer;
 import com.tungsten.fclcore.game.GameRepository;
 import com.tungsten.fclcore.game.Library;
+import com.tungsten.fclcore.game.LibraryDownloadInfo;
 import com.tungsten.fclcore.game.Version;
 import com.tungsten.fclcore.task.FileDownloadTask;
 import com.tungsten.fclcore.task.Task;
