@@ -87,14 +87,54 @@ public final class GameLibrariesTask extends Task<Void> {
         Path jar = file.toPath();
         if (!file.isFile()) return true;
 
+        LibraryDownloadInfo download = library.getDownload();
+
+        // Step 3.1: size 快速过滤（官方 JSON 有 size 字段时优先使用）
+        long expectedSize = download.getSize();
+        if (expectedSize > 0) {
+            try {
+                long actualSize = Files.size(jar);
+                if (actualSize != expectedSize) {
+                    Logging.LOG.log(Level.INFO, "Library " + library.getName() + " size mismatch (expected " + expectedSize + ", actual " + actualSize + "), deleting corrupted file");
+                    try {
+                        Files.deleteIfExists(jar);
+                    } catch (IOException ignored) {
+                    }
+                    return true;
+                }
+            } catch (IOException e) {
+                Logging.LOG.log(Level.WARNING, "Unable to read size of " + jar, e);
+            }
+        }
+
         if (!integrityCheck) {
             return false;
         }
         try {
-            if (!library.getDownload().validateChecksum(jar, true)) {
-                return true;
+            // Step 3.2: sha1 精确校验
+            String expectedSha1 = download.getSha1();
+            if (expectedSha1 != null && !expectedSha1.isEmpty()) {
+                String actualSha1 = com.tungsten.fclcore.util.DigestUtils.digestToString("SHA-1", jar);
+                if (!expectedSha1.equalsIgnoreCase(actualSha1)) {
+                    Logging.LOG.log(Level.INFO, "Library " + library.getName() + " sha1 mismatch (expected " + expectedSha1 + ", actual " + actualSha1 + "), deleting corrupted file");
+                    try {
+                        Files.deleteIfExists(jar);
+                    } catch (IOException ignored) {
+                    }
+                    return true;
+                }
+            } else {
+                // 没有 sha1 元数据时，按原始校验链兜底
+                if (!download.validateChecksum(jar, true)) {
+                    return true;
+                }
             }
             if (library.getChecksums() != null && !library.getChecksums().isEmpty() && !LibraryDownloadTask.checksumValid(file, library.getChecksums())) {
+                Logging.LOG.log(Level.INFO, "Library " + library.getName() + " external checksums mismatch, deleting corrupted file");
+                try {
+                    Files.deleteIfExists(jar);
+                } catch (IOException ignored) {
+                }
                 return true;
             }
             if (FileUtils.getExtension(file).equals("jar")) {
@@ -102,6 +142,11 @@ public final class GameLibrariesTask extends Task<Void> {
                     FileDownloadTask.ZIP_INTEGRITY_CHECK_HANDLER.checkIntegrity(jar, jar);
                 } catch (IOException ignored) {
                     // the Jar file is malformed, so re-download it.
+                    Logging.LOG.log(Level.INFO, "Library " + library.getName() + " JAR integrity check failed, deleting corrupted file");
+                    try {
+                        Files.deleteIfExists(jar);
+                    } catch (IOException ignored2) {
+                    }
                     return true;
                 }
             }

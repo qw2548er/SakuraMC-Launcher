@@ -56,7 +56,43 @@ public final class OSRestriction {
     }
 
     public boolean allow() {
-        return false;
+        OperatingSystem current = getCurrentOperatingSystem();
+
+        if (name != null && name != OperatingSystem.UNKNOWN) {
+            if (name != current) {
+                return false;
+            }
+        }
+
+        if (version != null && !version.isEmpty()) {
+            String currentVersion = System.getProperty("os.version", "");
+            if (!currentVersion.startsWith(version)) {
+                return false;
+            }
+        }
+
+        if (arch != null && !arch.isEmpty()) {
+            String currentArch = System.getProperty("os.arch", "");
+            if (!currentArch.equals(arch) && !currentArch.contains(arch)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static OperatingSystem getCurrentOperatingSystem() {
+        String osName = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        if (osName.contains("win")) {
+            return OperatingSystem.WINDOWS;
+        }
+        if (osName.contains("mac") || osName.contains("darwin") || osName.contains("osx") || osName.contains("os x")) {
+            return OperatingSystem.OSX;
+        }
+        if (osName.contains("linux") || osName.contains("nix") || osName.contains("nux") || osName.contains("aix") || osName.contains("android") || osName.contains("sunos") || osName.contains("solaris")) {
+            return OperatingSystem.LINUX;
+        }
+        return OperatingSystem.LINUX;
     }
 
 }

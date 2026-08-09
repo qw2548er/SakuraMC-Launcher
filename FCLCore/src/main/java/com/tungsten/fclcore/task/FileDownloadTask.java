@@ -236,7 +236,16 @@ public class FileDownloadTask extends FetchTask<Void> {
 
                 // Integrity check
                 if (integrityCheck != null) {
-                    integrityCheck.performCheck(digest);
+                    try {
+                        integrityCheck.performCheck(digest);
+                    } catch (ChecksumMismatchException e) {
+                        try {
+                            Files.deleteIfExists(file.toPath());
+                        } catch (IOException suppressed) {
+                            Logging.LOG.log(Level.WARNING, "Failed to delete corrupted file " + file + " after checksum mismatch", suppressed);
+                        }
+                        throw e;
+                    }
                 }
 
                 if (caching && integrityCheck != null) {
