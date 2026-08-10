@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="480dp"
+    android:layout_height="match_parent"
+    android:padding="10dp">
+
+    <!-- 标题：版本号 -->
+    <com.tungsten.fcllibrary.component.view.FCLTextView
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="16sp"
+        android:singleLine="true"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"/>
+
+    <!-- 摘要：总计/本地已存在/还需下载 -->
+    <com.tungsten.fcllibrary.component.view.FCLTextView
+        android:id="@+id/summary"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:layout_marginTop="4dp"
+        android:gravity="center"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/title"/>
+
+    <!-- 操作行：搜索框 / 排序按钮 / 一键精简按钮 -->
+    <com.tungsten.fcllibrary.component.view.FCLEditText
+        android:id="@+id/search_edit"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/library_picker_search_hint"
+        android:inputType="text"
+        android:imeOptions="actionSearch"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/btn_sort"
+        app:layout_constraintTop_toBottomOf="@+id/summary"/>
+
+    <com.tungsten.fcllibrary.component.view.FCLButton
+        android:id="@+id/btn_sort"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:minWidth="0dp"
+        android:text="@string/library_picker_action_sort_size"
+        app:layout_constraintBaseline_toBaselineOf="@+id/search_edit"
+        app:layout_constraintEnd_toStartOf="@+id/btn_minimal"/>
+
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:id="@+id/btn_minimal_row"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintBaseline_toBaselineOf="@+id/search_edit"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.tungsten.fcllibrary.component.view.FCLButton
+            android:id="@+id/btn_minimal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:layout_marginStart="4dp"
+            android:text="@string/library_picker_action_minimal"/>
+
+        <ImageView
+            android:id="@+id/btn_minimal_help"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
+            android:src="@android:drawable/ic_menu_help"
+            android:contentDescription="@string/help"/>
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
+    <!-- 单 RecyclerView，连续滚动；内部包含 Section 头 + Item -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:clipToPadding="false"
+        app:layout_constraintTop_toBottomOf="@+id/search_edit"
+        app:layout_constraintBottom_toTopOf="@+id/button_bar"/>
+
+    <!-- 底部操作按钮栏 -->
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:id="@+id/button_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <com.tungsten.fcllibrary.component.view.FCLButton
+            android:id="@+id/btn_recommended"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/library_picker_action_select_recommended"/>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
+
+        <com.tungsten.fcllibrary.component.view.FCLButton
+            android:id="@+id/btn_reset"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:text="@string/library_picker_action_reset"/>
+
+        <com.tungsten.fcllibrary.component.view.FCLButton
+            android:id="@+id/btn_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:text="@string/button_cancel"/>
+
+        <com.tungsten.fcllibrary.component.view.FCLButton
+            android:id="@+id/btn_download"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/library_picker_action_download"/>
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

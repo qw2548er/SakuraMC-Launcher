@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "version": "2024.07",
+
+  "_comment_matching_order": "匹配优先级：excludes 最先（命中直接跳到最后用 fallback）-> must 精确坐标 -> must_prefixes -> must_artifacts -> must_natives -> recommended 精确坐标 -> recommended_prefixes -> recommended_keywords -> optional 精确坐标 -> optional_prefixes -> optional_keywords -> fallback_category",
+
+  "excludes": {
+    "_comment": "黑名单机制：某些包名/关键词虽然命中某规则，但业务上希望强制排除到 OPTIONAL，这里先列出，命中 excludes 就直接按 fallback 或指定分类",
+    "coords_prefixes": [],
+    "keywords": []
+  },
+
+  "must": {
+    "coords_exact": [
+      "com.google.guava:guava",
+      "com.google.code.gson:gson",
+      "org.apache.logging.log4j:log4j-api",
+      "org.apache.logging.log4j:log4j-core",
+      "com.mojang:authlib",
+      "com.mojang:realms",
+      "com.mojang:blocklist",
+      "com.mojang:brigadier",
+      "com.mojang:datafixerupper",
+      "com.mojang:javabridge",
+      "com.mojang:logging",
+      "com.mojang:patch",
+      "com.mojang:text2speech"
+    ],
+    "coords_prefixes": [
+      "net.minecraft.",
+      "net.minecraft:",
+      "org.lwjgl",
+      "com.mojang:authlib",
+      "com.mojang:realms",
+      "com.mojang:blocklist",
+      "com.mojang:brigadier",
+      "com.mojang:datafixerupper",
+      "com.mojang:javabridge",
+      "com.mojang:logging",
+      "com.mojang:patch",
+      "com.mojang:text2speech"
+    ],
+    "artifact_ids_exact": [
+      "guava",
+      "gson",
+      "log4j-api",
+      "log4j-core"
+    ],
+    "artifact_ids_prefixes": [
+      "log4j-"
+    ],
+    "natives": true
+  },
+
+  "recommended": {
+    "coords_exact": [
+      "com.github.ben-manes.caffeine:caffeine"
+    ],
+    "coords_prefixes": [
+      "org.apache.commons:",
+      "org.apache.httpcomponents",
+      "io.netty",
+      "org.slf4j",
+      "org.jline",
+      "com.ibm.icu:icu4j",
+      "org.javassist:",
+      "it.unimi.dsi:fastutil",
+      "com.github.oshi:oshi-core",
+      "net.java.dev.jna:jna",
+      "net.java.dev.jna:jna-platform"
+    ],
+    "keywords": [
+      "sound",
+      "audio",
+      "paulscode",
+      "soundengine",
+      "truelicense",
+      "commons-io",
+      "commons-lang3",
+      "commons-lang",
+      "commons-text",
+      "commons-logging",
+      "icu4j",
+      "javassist",
+      "fastutil",
+      "oshi-core",
+      "jna-platform"
+    ]
+  },
+
+  "optional": {
+    "coords_exact": [],
+    "coords_prefixes": [],
+    "keywords": [
+      "test",
+      "debug",
+      "debug-",
+      "voicechat",
+      "voice-chat",
+      "mumble",
+      "snapshot-support",
+      "legacy",
+      "compat",
+      "jinput-platform",
+      "twitch-platform"
+    ],
+    "extra_natives_wrong_environment": true
+  },
+
+  "fallback_category": "RECOMMENDED"
+}

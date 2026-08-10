@@ -142,6 +142,9 @@ public class LauncherSettingPage extends FCLCommonPage implements View.OnClickLi
         binding.autoExitLauncher.setChecked(sharedPreferences.getBoolean("autoExitLauncher", false));
         binding.autoExitLauncher.setOnCheckedChangeListener(this);
 
+        binding.showLibraryPicker.setChecked(com.tungsten.fcl.game.LibraryPickerLaunchStarter.shouldShowPicker(getContext()));
+        binding.showLibraryPicker.setOnCheckedChangeListener(this);
+
         binding.ignoreNotch.setChecked(ThemeEngine.getInstance().getTheme().isFullscreen());
         binding.ignoreNotch.setOnCheckedChangeListener(this);
 
@@ -563,6 +566,8 @@ public class LauncherSettingPage extends FCLCommonPage implements View.OnClickLi
             sharedPreferences.edit().putBoolean("disableFullscreenInput", isChecked).apply();
         } else if (v == binding.autoExitLauncher) {
             sharedPreferences.edit().putBoolean("autoExitLauncher", isChecked).apply();
+        } else if (v == binding.showLibraryPicker) {
+            com.tungsten.fcl.game.LibraryPickerLaunchStarter.setShouldShowPicker(getContext(), isChecked);
         } else if (v == binding.allowScreenshots) {
             sharedPreferences.edit().putBoolean("allowScreenshots", isChecked).apply();
         }

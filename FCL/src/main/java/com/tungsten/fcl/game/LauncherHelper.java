@@ -67,6 +67,7 @@ import com.tungsten.fclcore.download.game.GameAssetIndexDownloadTask;
 import com.tungsten.fclcore.download.game.GameVerificationFixTask;
 import com.tungsten.fclcore.download.game.LibraryDownloadException;
 import com.tungsten.fclcore.game.JavaVersion;
+import com.tungsten.fclcore.game.Library;
 import com.tungsten.fclcore.game.LaunchOptions;
 import com.tungsten.fclcore.game.Version;
 import com.tungsten.fclcore.mod.LocalModFile;
@@ -78,14 +79,10 @@ import com.tungsten.fclcore.task.Schedulers;
 import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.task.TaskListener;
-import com.tungsten.fclcore.util.Lang;
-import com.tungsten.fclcore.util.LibFilter;
-import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fclcore.util.io.FileUtils;
 import com.tungsten.fclcore.util.io.ResponseCodeException;
 import com.tungsten.fclcore.util.versioning.GameVersionNumber;
 import com.tungsten.fclcore.util.versioning.VersionNumber;
-import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
 import com.tungsten.fcllibrary.component.view.FCLButton;
 import com.tungsten.fcllibrary.component.view.FCLTabLayout;
@@ -105,9 +102,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CancellationException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 
 public final class LauncherHelper {
@@ -146,14 +142,54 @@ public final class LauncherHelper {
 
         AtomicReference<JavaVersion> javaVersionRef = new AtomicReference<>();
 
-        TaskExecutor executor = checkGameState(context, setting, version.get())
-                .thenComposeAsync(javaVersion -> {
+        // 先做 Java 检查（同步 UI 阻塞部分），通过后再决定是否弹依赖选择框
+        TaskExecutor preCheckExecutor = checkGameState(context, setting, version.get())
+                .thenAcceptAsync(javaVersion -> {
                     javaVersionRef.set(Objects.requireNonNull(javaVersion));
                     version.set(LibFilter.filter(version.get()));
+                })
+                .withStagesHint(Lang.immutableListOf("launch.state.java"))
+                .executor();
+
+        final LibraryPickerLaunchStarter starter = new LibraryPickerLaunchStarter(
+                context, launchingStepsPane, repository, dependencyManager, version.get(),
+                setting, selectedVersion, gameVersion, integrityCheck,
+                (javaVersion, librarySubset) -> Schedulers.androidUIThread().execute(() ->
+                        continueLaunchAfterLibrarySelection(version.get(), javaVersion, repository, dependencyManager,
+                                gameVersion, integrityCheck, librarySubset))
+        );
+
+        preCheckExecutor.addTaskListener(new TaskListener() {
+            @Override
+            public void onStop(boolean success, TaskExecutor executor) {
+                if (!success) {
+                    starter.afterJavaCheckFailed(executor.getException());
+                    return;
+                }
+                starter.afterJavaCheckSucceeded(javaVersionRef.get());
+            }
+        });
+        preCheckExecutor.start();
+    }
+
+    /**
+     * 依赖选择结束（或跳过选择）后，继续构建完整的启动 TaskExecutor。
+     *
+     * @param librarySubset 用户最终勾选的依赖子集；{@code null} 表示不启用可选依赖功能，走原始完整下载流程。
+     */
+    private void continueLaunchAfterLibrarySelection(Version version,
+                                                     JavaVersion javaVersion,
+                                                     FCLGameRepository repository,
+                                                     DefaultDependencyManager dependencyManager,
+                                                     Optional<String> gameVersion,
+                                                     boolean integrityCheck,
+                                                     List<Library> librarySubset) {
+        TaskExecutor executor = Task.completed(javaVersion)
+                .thenComposeAsync(v -> {
                     if (setting.isNotCheckGame())
                         return null;
                     return Task.allOf(
-                            dependencyManager.checkGameCompletionAsync(version.get(), integrityCheck),
+                            dependencyManager.checkGameCompletionAsync(version, integrityCheck, librarySubset),
                             Task.composeAsync(() -> {
                                 try {
                                     ModpackConfiguration<?> configuration = ModpackHelper.readModpackConfiguration(repository.getModpackConfiguration(selectedVersion));
@@ -169,7 +205,7 @@ public final class LauncherHelper {
                             Task.composeAsync(() -> null)
                     );
                 }).withStage("launch.state.dependencies")
-                .thenComposeAsync(() -> {
+                .thenComposeAsync(u -> {
                     try (InputStream input = LauncherHelper.class.getResourceAsStream("/assets/game/MioLibPatcher.jar")) {
                         Files.copy(input, new File(FCLPath.LIB_PATCHER_PATH).toPath(), StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException e) {
@@ -177,7 +213,7 @@ public final class LauncherHelper {
                     }
                     return null;
                 })
-                .thenComposeAsync(() -> {
+                .thenComposeAsync(u -> {
                     try (InputStream input = LauncherHelper.class.getResourceAsStream("/assets/game/MioLaunchWrapper.jar")) {
                         Files.copy(input, new File(FCLPath.MIO_LAUNCH_WRAPPER).toPath(), StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException e) {
@@ -185,8 +221,8 @@ public final class LauncherHelper {
                     }
                     return null;
                 })
-                .thenComposeAsync(() -> gameVersion.map(s -> new GameVerificationFixTask(dependencyManager, s, version.get())).orElse(null))
-                .thenComposeAsync(() -> logIn(context, account).withStage("launch.state.logging_in"))
+                .thenComposeAsync(u -> gameVersion.map(s -> new GameVerificationFixTask(dependencyManager, s, version)).orElse(null))
+                .thenComposeAsync(u -> logIn(context, account).withStage("launch.state.logging_in"))
                 .thenComposeAsync(authInfo -> Task.supplyAsync(() -> {
                             try {
                                 MenuSetting menuSetting = new GsonBuilder()
@@ -199,23 +235,22 @@ public final class LauncherHelper {
                             } catch (Throwable ignore) {
                                 scaleFactor = 1d;
                             }
-                            LaunchOptions launchOptions = repository.getLaunchOptions(selectedVersion, javaVersionRef.get(), profile.getGameDir(), scaleFactor);
+                            LaunchOptions launchOptions = repository.getLaunchOptions(selectedVersion, javaVersion, profile.getGameDir(), scaleFactor);
                             FCLGameLauncher launcher = new FCLGameLauncher(
                                     context,
                                     repository,
-                                    version.get(),
+                                    version,
                                     authInfo,
                                     launchOptions
                             );
-                            version.get().getLibraries().forEach(library -> {
+                            version.getLibraries().forEach(library -> {
                                 if (library.getName().startsWith("net.java.dev.jna:jna:")) {
                                     launcher.setJnaVersion(library.getVersion());
                                 }
                             });
                             return launcher;
-                        }).thenComposeAsync(launcher -> { // launcher is prev task's result
-                            return Task.supplyAsync(launcher::launch);
-                        }).thenComposeAsync(fclBridge -> checkPathValid(fclBridge, repository))
+                        }).thenComposeAsync(launcher -> Task.supplyAsync(launcher::launch))
+                        .thenComposeAsync(fclBridge -> checkPathValid(fclBridge, repository))
                         .thenComposeAsync(fclBridge -> {
                             Renderer renderer = RendererManager.getRenderer(repository.getVersionSetting(selectedVersion).getRenderer());
                             fclBridge.setRenderer(renderer.getName());
@@ -234,12 +269,12 @@ public final class LauncherHelper {
                             gameOption.save();
                             return Task.completed(fclBridge);
                         }).thenAcceptAsync(fclBridge -> Schedulers.androidUIThread().execute(() -> {
-                            CallbackBridge.nativeSetUseInputStackQueue(version.get().getArguments().isPresent());
+                            CallbackBridge.nativeSetUseInputStackQueue(version.getArguments().isPresent());
                             Intent intent = new Intent(context, JVMActivity.class);
                             fclBridge.setScaleFactor(scaleFactor);
                             fclBridge.setController(repository.getVersionSetting(selectedVersion).getController());
                             fclBridge.setGameDir(repository.getRunDirectory(selectedVersion).getAbsolutePath());
-                            fclBridge.setJava(Integer.toString(javaVersionRef.get().getVersion()));
+                            fclBridge.setJava(Integer.toString(javaVersion.getVersion()));
                             JVMActivity.setFCLBridge(fclBridge, MenuType.GAME);
                             Bundle bundle = new Bundle();
                             bundle.putString("controller", repository.getVersionSetting(selectedVersion).getController());

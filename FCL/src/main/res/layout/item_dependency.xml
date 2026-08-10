@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.appcompat.widget.LinearLayoutCompat xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <com.tungsten.fcllibrary.component.view.FCLLinearLayout
+        android:id="@+id/parent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:orientation="horizontal"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:background="@drawable/bg_container_white_clickable">
+
+        <!-- 分类色块指示 -->
+        <View
+            android:id="@+id/category_bar"
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:layout_marginEnd="8dp"
+            android:background="@color/library_must_tint"/>
+
+        <com.tungsten.fcllibrary.component.view.FCLCheckBox
+            android:id="@+id/check"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_gravity="center"/>
+
+        <androidx.appcompat.widget.LinearLayoutCompat
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:layout_gravity="center"
+            android:orientation="vertical">
+
+            <!-- GAV 坐标 -->
+            <com.tungsten.fcllibrary.component.view.FCLTextView
+                android:id="@+id/name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:singleLine="true"
+                app:auto_text_tint="true"/>
+
+            <!-- 大小 / 分类提示 / 本地已存在 -->
+            <com.tungsten.fcllibrary.component.view.FCLTextView
+                android:id="@+id/subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="11sp"
+                android:singleLine="true"
+                app:auto_text_tint="true"/>
+
+        </androidx.appcompat.widget.LinearLayoutCompat>
+
+    </com.tungsten.fcllibrary.component.view.FCLLinearLayout>
+
+</androidx.appcompat.widget.LinearLayoutCompat>

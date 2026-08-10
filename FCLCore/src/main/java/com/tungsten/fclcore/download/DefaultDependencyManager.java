@@ -22,6 +22,8 @@ import com.tungsten.fclcore.download.forge.ForgeInstallTask;
 import com.tungsten.fclcore.download.game.GameAssetDownloadTask;
 import com.tungsten.fclcore.download.game.GameDownloadTask;
 import com.tungsten.fclcore.download.game.GameLibrariesTask;
+import com.tungsten.fclcore.download.game.LibraryClassifier;
+import com.tungsten.fclcore.download.game.LibrarySelectionStore;
 import com.tungsten.fclcore.download.neoforge.NeoForgeInstallTask;
 import com.tungsten.fclcore.download.optifine.OptiFineInstallTask;
 import com.tungsten.fclcore.game.Artifact;
@@ -35,6 +37,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -76,6 +79,19 @@ public class DefaultDependencyManager extends AbstractDependencyManager {
 
     @Override
     public Task<?> checkGameCompletionAsync(Version version, boolean integrityCheck) {
+        return checkGameCompletionAsync(version, integrityCheck, null);
+    }
+
+    /**
+     * 完整启动前校验（版本 Jar + Patch + Asset + Libraries），
+     * 其中 libraries 部分允许传入用户选择后的 subset 来做「可选依赖下载」。
+     *
+     * @param librarySubset 若为 {@code null} 则等价于原方法（下载全部适用的库）
+     */
+    public Task<?> checkGameCompletionAsync(Version version, boolean integrityCheck, List<Library> librarySubset) {
+        Task<?> librariesTask = librarySubset == null
+                ? new GameLibrariesTask(this, version, integrityCheck)
+                : new GameLibrariesTask(this, version, integrityCheck, librarySubset);
         return Task.allOf(
                 Task.composeAsync(() -> {
                     File versionJar = repository.getVersionJar(version);
@@ -85,13 +101,55 @@ public class DefaultDependencyManager extends AbstractDependencyManager {
                         return null;
                 }).thenComposeAsync(checkPatchCompletionAsync(version, integrityCheck)),
                 new GameAssetDownloadTask(this, version, GameAssetDownloadTask.DOWNLOAD_INDEX_IF_NECESSARY, integrityCheck),
-                new GameLibrariesTask(this, version, integrityCheck)
+                librariesTask
         );
     }
 
     @Override
     public Task<?> checkLibraryCompletionAsync(Version version, boolean integrityCheck) {
         return new GameLibrariesTask(this, version, integrityCheck, version.getLibraries());
+    }
+
+    /**
+     * 与 {@link #checkLibraryCompletionAsync} 等价，但允许外部先读取完整 libraries 列表、
+     * 通过 UI 让用户勾选哪些要下，再传入「用户选择后的 subset」执行实际下载。
+     *
+     * @param selectedSubset 经过过滤后的 libraries 子集；若传入 {@code null} 则与原方法完全等价
+     */
+    public Task<?> checkLibraryCompletionAsync(Version version, boolean integrityCheck, List<Library> selectedSubset) {
+        if (selectedSubset == null) {
+            return checkLibraryCompletionAsync(version, integrityCheck);
+        }
+        return new GameLibrariesTask(this, version, integrityCheck, selectedSubset);
+    }
+
+    /** 对某版本的 libraries 做分类（不执行任何下载）。返回值直接供 UI 使用。 */
+    public LibraryClassifier.Classification classifyLibraries(Version version, boolean integrityCheck) {
+        List<Library> all = filterForEnvironment(version.getLibraries());
+        return LibraryClassifier.classify(all, library -> !GameLibrariesTask.shouldDownloadLibrary(repository, version, library, integrityCheck));
+    }
+
+    /** 按平台 rules 做一次预过滤，只保留当前系统适用的库。 */
+    public List<Library> filterForEnvironment(List<Library> libraries) {
+        List<Library> out = new ArrayList<>(libraries.size());
+        for (Library lib : libraries) {
+            if (lib.appliesToCurrentEnvironment()) {
+                out.add(lib);
+            }
+        }
+        return out;
+    }
+
+    /** 选择持久化存储（每版本记住用户勾选）。 */
+    public LibrarySelectionStore librarySelectionStore() {
+        Path base = repository.getBaseDirectory().toPath();
+        return new LibrarySelectionStore(base);
+    }
+
+    /** 仅用于 checkGameCompletionAsync：把 MUST + 用户上次勾选合并成最终下载子集。 */
+    public List<Library> applyUserSelection(Version version, boolean integrityCheck, Set<String> selectedKeys) {
+        LibraryClassifier.Classification cls = classifyLibraries(version, integrityCheck);
+        return cls.filterForDownload(selectedKeys == null ? cls.defaultSelection() : selectedKeys);
     }
 
     @Override

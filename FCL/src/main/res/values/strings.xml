@@ -1248,4 +1248,38 @@
     <string name="slide_selection">Slide Selection</string>
     <string name="swap_hands">Double Tap Swap Hands</string>
     <string name="jar_executor_warn">Note! This feature is not for installing mods. If you are installing mods, please use the launcher\'s download function or add them in "Manage Mods".</string>
+
+    <!-- Library picker dialog -->
+    <string name="library_picker_title">📦 Libraries for %s</string>
+    <string name="library_picker_summary">Selected %1$d · %2$s total · %3$s local exists · %4$s to download</string>
+    <string name="library_picker_category_must">🔴 Required (%1$d, %2$s) — mandatory</string>
+    <string name="library_picker_category_recommended">🟡 Recommended (%1$d, %2$s) — selected by default</string>
+    <string name="library_picker_category_optional">🟢 Optional (%1$d, %2$s) — unselected by default</string>
+
+    <!-- section headings shown in single RecyclerView: 必须 / 推荐 / 可选 -->
+    <string name="library_picker_category_must_line">🔴 必须依赖（mandatory, no uncheck）</string>
+    <string name="library_picker_category_recommended_line">🟡 推荐依赖（recommended, can uncheck）</string>
+    <string name="library_picker_category_optional_line">🟢 可选依赖（optional, can enable）</string>
+
+    <!-- section header 右侧摘要：已选 / 总数 / 本地已存在大小 / 选中大小 -->
+    <string name="library_picker_section_summary">%1$d/%2$d · present %3$s · picking %4$s</string>
+
+    <string name="library_picker_hint_present">(already present locally, skip download)</string>
+    <string name="library_picker_warn_recommended">Unchecking recommended libraries may cause no sound or render issues. Continue anyway?</string>
+    <string name="library_picker_action_select_recommended">Select All Recommended</string>
+    <string name="library_picker_action_reset">Restore Default</string>
+    <string name="library_picker_action_download">Start Download</string>
+
+    <!-- 搜索 / 排序 / 一键精简 -->
+    <string name="library_picker_search_hint">Search libraries (name / description)</string>
+    <string name="library_picker_action_sort_size">Sort by size</string>
+    <string name="library_picker_action_sort_name">Sort by name</string>
+    <string name="library_picker_action_minimal">Minimal</string>
+    <string name="library_picker_help_minimal">Minimal = 只保留启动必需的核心库（仅 MUST）；音效/中文显示/网络等可选功能可能不可用。</string>
+    <string name="help">Help</string>
+
+    <!-- 设置项：启动前显示依赖选择 -->
+    <string name="setting_show_library_picker_title">Show library picker before launch</string>
+    <string name="setting_show_library_picker_summary">Allow fine-grained selecting which libraries to download. Default off for normal users.</string>
+
 </resources>

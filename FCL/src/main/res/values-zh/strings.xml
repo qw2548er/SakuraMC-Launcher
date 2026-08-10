@@ -1181,4 +1181,37 @@
     <string name="swap_hands">双击切换副手</string>
     <string name="jar_executor_warn">注意！该功能不是用于安装模组的，如果你正在安装模组，请使用启动器的下载功能或是在“管理模组”内添加。</string>
 
+    <!-- 依赖选择对话框 -->
+    <string name="library_picker_title">📦 版本 %s 依赖清单</string>
+    <string name="library_picker_summary">已选 %1$d · 总计 %2$s · 本地已存在 %3$s · 还需下载 %4$s</string>
+    <string name="library_picker_category_must">🔴 必须依赖（%1$d 个，%2$s）—— 不可取消</string>
+    <string name="library_picker_category_recommended">🟡 推荐依赖（%1$d 个，%2$s）—— 默认勾选</string>
+    <string name="library_picker_category_optional">🟢 可选依赖（%1$d 个，%2$s）—— 默认不勾</string>
+
+    <!-- section headings shown in single RecyclerView -->
+    <string name="library_picker_category_must_line">🔴 必须依赖（mandatory, no uncheck）</string>
+    <string name="library_picker_category_recommended_line">🟡 推荐依赖（recommended, can uncheck）</string>
+    <string name="library_picker_category_optional_line">🟢 可选依赖（optional, can enable）</string>
+
+    <!-- section header 右侧摘要：已选 / 总数 / 本地已存在大小 / 选中大小 -->
+    <string name="library_picker_section_summary">%1$d/%2$d · 已存在 %3$s · 勾选 %4$s</string>
+
+    <string name="library_picker_hint_present">（本地已存在，跳过下载）</string>
+    <string name="library_picker_warn_recommended">取消部分推荐依赖可能导致游戏没有声音 / 画面异常，确定要跳过吗？</string>
+    <string name="library_picker_action_select_recommended">全选推荐</string>
+    <string name="library_picker_action_reset">恢复默认</string>
+    <string name="library_picker_action_download">开始下载</string>
+
+    <!-- 搜索 / 排序 / 一键精简 -->
+    <string name="library_picker_search_hint">搜索依赖（名称 / 说明）</string>
+    <string name="library_picker_action_sort_size">按大小排序</string>
+    <string name="library_picker_action_sort_name">按名称排序</string>
+    <string name="library_picker_action_minimal">一键精简</string>
+    <string name="library_picker_help_minimal">一键精简 = 仅保留 MUST 核心库。可能导致音效/中文/网络等推荐功能不可用。</string>
+    <string name="help">帮助</string>
+
+    <!-- 设置项：启动前显示依赖选择 -->
+    <string name="setting_show_library_picker_title">启动前显示依赖选择</string>
+    <string name="setting_show_library_picker_summary">允许精细控制下载哪些库。普通用户建议默认关闭。</string>
+
 </resources>
