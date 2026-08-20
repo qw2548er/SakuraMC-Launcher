@@ -119,6 +119,8 @@ public final class LibraryClassifier {
                 try {
                     if (fallbackSupplier != null) fallback = fallbackSupplier.open();
                     injectRules(cachedRulesFile, fallback);
+                } catch (IOException e) {
+                    Logging.LOG.log(Level.WARNING, "注入 LibraryClassifier 规则失败：读取 fallback 流或注入 IO 异常", e);
                 } finally {
                     if (fallback != null) {
                         try { fallback.close(); } catch (IOException ignore) {}
