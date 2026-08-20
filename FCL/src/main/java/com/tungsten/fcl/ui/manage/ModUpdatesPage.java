@@ -487,7 +487,7 @@ public class ModUpdatesPage extends FCLTempPage implements View.OnClickListener 
                 if (best.isEmpty()) return;
                 RemoteMod.Version v = best.get();
                 Path dest = modsDir.resolve(v.getFile().getFilename());
-                String key = (mod.getId() == null ? dependencyId : mod.getId()) + ":" + (v.getVersion() == null ? "" : v.getVersion());
+                String key = (mod.getModid() == null ? dependencyId : mod.getModid()) + ":" + (v.getVersion() == null ? "" : v.getVersion());
                 if (plannedDests.contains(dest)) return;
                 boolean localHit = isLocalFileValid(dest, v.getFile().getIntegrityCheck());
                 FileDownloadTask task = null;
@@ -496,7 +496,7 @@ public class ModUpdatesPage extends FCLTempPage implements View.OnClickListener 
                     task.setName(v.getName());
                 }
                 long size = 0L; // RemoteMod.File does not expose size
-                plan.add(new PlannedDownload(key, v.getName(), size, localHit, mod.getId(), dest, task));
+                plan.add(new PlannedDownload(key, v.getName(), size, localHit, mod.getModid(), dest, task));
                 plannedDests.add(dest);
                 // Recurse into nested dependencies
                 List<RemoteMod.Dependency> nested = v.getDependencies();

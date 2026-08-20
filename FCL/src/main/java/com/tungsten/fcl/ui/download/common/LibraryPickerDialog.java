@@ -393,7 +393,7 @@ public class LibraryPickerDialog extends FCLDialog implements View.OnClickListen
             }
             if (missingRecommended) {
                 FCLAlertDialog.Builder b = new FCLAlertDialog.Builder(getContext());
-                b.setAlertLevel(FCLAlertDialog.AlertLevel.WARNING);
+                b.setAlertLevel(FCLAlertDialog.AlertLevel.ALERT);
                 b.setCancelable(false);
                 b.setTitle(getContext().getString(R.string.message_warning));
                 b.setMessage(getContext().getString(R.string.library_picker_warn_recommended));

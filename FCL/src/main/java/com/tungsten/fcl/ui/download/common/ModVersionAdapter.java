@@ -18,6 +18,7 @@ import com.tungsten.fcl.ui.TaskDialog;
 import com.tungsten.fcl.ui.manage.ManagePageManager;
 import com.tungsten.fcl.util.TaskCancellationAction;
 import com.tungsten.fclcore.download.LibraryAnalyzer;
+import com.tungsten.fclcore.mod.LocalMod;
 import com.tungsten.fclcore.mod.LocalModFile;
 import com.tungsten.fclcore.mod.ModLoaderType;
 import com.tungsten.fclcore.mod.ModManager;
@@ -403,10 +404,10 @@ public class ModVersionAdapter extends FCLAdapter {
     }
 
     private PlanResult buildPlan(RemoteMod.Version currentVersion) throws IOException {
-        List<RemoteMod.Dependency> dependencies = (currentVersion.getDependencies() == null ? Collections.emptyList() : currentVersion.getDependencies()).stream()
+        List<RemoteMod.Dependency> dependencies = (currentVersion.getDependencies() == null ? Collections.<RemoteMod.Dependency>emptyList() : currentVersion.getDependencies()).stream()
                 .filter(d -> d.getType() == RemoteMod.DependencyType.REQUIRED
                         || d.getType() == RemoteMod.DependencyType.TOOL)
-                .collect(Collectors.toList());
+                .collect(Collectors.<RemoteMod.Dependency>toList());
 
         Profile profile = Profiles.getSelectedProfile();
         String selectedVersion = profile.getSelectedVersion();

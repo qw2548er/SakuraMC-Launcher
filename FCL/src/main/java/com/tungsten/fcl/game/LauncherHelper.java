@@ -81,6 +81,7 @@ import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.task.TaskListener;
 import com.tungsten.fclcore.util.LibFilter;
+import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fclcore.util.io.FileUtils;
 import com.tungsten.fclcore.util.io.ResponseCodeException;
 import com.tungsten.fclcore.util.versioning.GameVersionNumber;
@@ -105,7 +106,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 
 public final class LauncherHelper {
