@@ -133,16 +133,17 @@ public class ModVersionAdapter extends FCLAdapter {
                         || d.getType() == RemoteMod.DependencyType.TOOL)
                 .collect(Collectors.toList());
 
-        if (dependencies.isEmpty()) {
-            Toast.makeText(getContext(), getContext().getString(R.string.mods_dependency_none_required), Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         TaskDialog taskDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
         taskDialog.setTitle(getContext().getString(R.string.message_downloading));
         Schedulers.androidUIThread().execute(() -> {
-            TaskExecutor executor = Task.supplyAsync(() -> buildDependencyDownloadTasks(dependencies))
-                    .thenComposeAsync(tasks -> Task.allOf(tasks))
+            TaskExecutor executor = Task.supplyAsync(() -> buildDependencyDownloadTasks(version, dependencies))
+                    .thenComposeAsync(tasks -> {
+                        if (tasks.isEmpty()) {
+                            // 本体本地已存在 + 所有依赖也都本地已存在：返回空 completed Task，避免 allOf 空列表歧义
+                            return Task.completed(null);
+                        }
+                        return Task.allOf(tasks);
+                    })
                     .whenComplete(Schedulers.androidUIThread(), (result, exception) -> {
                         if (exception != null) {
                             if (exception instanceof CancellationException) {
@@ -175,7 +176,8 @@ public class ModVersionAdapter extends FCLAdapter {
         }
     }
 
-    private List<Task<?>> buildDependencyDownloadTasks(List<RemoteMod.Dependency> dependencies) throws IOException {
+    private List<Task<?>> buildDependencyDownloadTasks(RemoteMod.Version currentVersion,
+                                                       List<RemoteMod.Dependency> dependencies) throws IOException {
         Profile profile = Profiles.getSelectedProfile();
         String selectedVersion = profile.getSelectedVersion();
         String currentGameVersion = "";
@@ -188,7 +190,7 @@ public class ModVersionAdapter extends FCLAdapter {
             currentGameVersion = analyzer.getVersion(LibraryAnalyzer.LibraryType.MINECRAFT).orElse("");
         }
 
-        Logging.LOG.log(Level.INFO, "开始构建依赖下载任务: 游戏版本=" + currentGameVersion + ", 加载器=" + currentLoaders);
+        Logging.LOG.log(Level.INFO, "开始构建一键下载任务（模组本体 + 依赖）: 游戏版本=" + currentGameVersion + ", 加载器=" + currentLoaders);
 
         Path runDirectory = profile.getRepository().hasVersion(selectedVersion)
                 ? profile.getRepository().getRunDirectory(selectedVersion).toPath()
@@ -198,11 +200,59 @@ public class ModVersionAdapter extends FCLAdapter {
         Set<String> downloadedIds = new HashSet<>();
         List<Task<?>> tasks = new ArrayList<>();
 
+        // 首先处理当前选中的模组本体（真正的"一键下载"：不只是依赖，还要下载模组本身）
+        // 注意：下面所有依赖逻辑一律保持原样不动，仅额外处理本体
+        if (currentVersion != null) {
+            String pseudoId = (currentVersion.getModId() == null ? "__current__" : currentVersion.getModId())
+                    + ":" + (currentVersion.getVersion() == null ? "" : currentVersion.getVersion());
+            if (!downloadedIds.contains(pseudoId)) {
+                try {
+                    Logging.LOG.log(Level.INFO, "[0] 处理当前模组本体: " + currentVersion.getName() + " (" + pseudoId + ")");
+                    Path dest = modsDir.resolve(currentVersion.getFile().getFilename());
+
+                    if (isLocalFileValid(dest, currentVersion.getFile().getIntegrityCheck())) {
+                        Logging.LOG.log(Level.INFO, "[0] 本地已存在且哈希匹配，跳过下载: " + currentVersion.getName());
+                        downloadedIds.add(pseudoId);
+
+                        List<RemoteMod.Dependency> nestedDependencies = currentVersion.getDependencies();
+                        if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
+                            Logging.LOG.log(Level.INFO, "[0] 递归解析本体声明的 " + nestedDependencies.size() + " 个子依赖");
+                            for (RemoteMod.Dependency nested : nestedDependencies) {
+                                downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
+                                        modsDir, downloadedIds, tasks, 1);
+                            }
+                        }
+                    } else {
+                        FileDownloadTask task = new FileDownloadTask(
+                                NetworkUtils.toURL(currentVersion.getFile().getUrl()),
+                                dest.toFile(),
+                                currentVersion.getFile().getIntegrityCheck());
+                        task.setName(currentVersion.getName());
+                        tasks.add(task);
+                        downloadedIds.add(pseudoId);
+                        Logging.LOG.log(Level.INFO, "[0] 创建下载任务: " + currentVersion.getName() + " -> " + dest);
+
+                        List<RemoteMod.Dependency> nestedDependencies = currentVersion.getDependencies();
+                        if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
+                            Logging.LOG.log(Level.INFO, "[0] 递归解析本体声明的 " + nestedDependencies.size() + " 个子依赖");
+                            for (RemoteMod.Dependency nested : nestedDependencies) {
+                                downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
+                                        modsDir, downloadedIds, tasks, 1);
+                            }
+                        }
+                    }
+                } catch (Throwable e) {
+                    Logging.LOG.log(Level.WARNING, "[0] 处理当前模组本体失败: " + pseudoId, e);
+                    // 不往 downloadedIds 里塞，留给依赖循环再试一次（概率极低）
+                }
+            }
+        }
+
         for (RemoteMod.Dependency dependency : dependencies) {
             downloadDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir, downloadedIds, tasks, 0);
         }
 
-        Logging.LOG.log(Level.INFO, "依赖下载任务构建完成: 共 " + tasks.size() + " 个任务");
+        Logging.LOG.log(Level.INFO, "依赖下载任务构建完成: 共 " + tasks.size() + " 个任务（含模组本体）");
         return tasks;
     }
 
