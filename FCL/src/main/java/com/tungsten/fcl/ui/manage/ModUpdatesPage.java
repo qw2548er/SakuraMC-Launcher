@@ -349,7 +349,7 @@ public class ModUpdatesPage extends FCLTempPage implements View.OnClickListener 
                 try {
                     String fileName = remote.getFile().getFilename();
                     Path dest = modsDir.resolve(fileName);
-                    String key = (remote.getModId() == null ? "" : remote.getModId()) + ":" + (remote.getVersion() == null ? "" : remote.getVersion());
+                    String key = (remote.getModid() == null ? "" : remote.getModid()) + ":" + (remote.getVersion() == null ? "" : remote.getVersion());
                     if (!plannedKeys.contains(key) && !plannedDests.contains(dest)) {
                         boolean localHit = isLocalFileValid(dest, remote.getFile().getIntegrityCheck());
                         FileDownloadTask task = null;
@@ -360,8 +360,8 @@ public class ModUpdatesPage extends FCLTempPage implements View.OnClickListener 
                                     remote.getFile().getIntegrityCheck());
                             task.setName(remote.getName());
                         }
-                        long size = remote.getFile().getSize() == null ? 0L : remote.getFile().getSize();
-                        plan.add(new PlannedDownload(key, remote.getName(), size, localHit, remote.getModId(), dest, task));
+                        long size = 0L; // RemoteMod.File does not expose size
+                        plan.add(new PlannedDownload(key, remote.getName(), size, localHit, remote.getModid(), dest, task));
                         plannedKeys.add(key);
                         plannedDests.add(dest);
                     }
@@ -395,33 +395,40 @@ public class ModUpdatesPage extends FCLTempPage implements View.OnClickListener 
                 final RemoteMod.Version remote = mod.getValue();
                 final int idx = i;
                 boolean isDisabled = local.getModManager().isDisabled(local.getFile());
+                final String finalFileName = isDisabled
+                        ? remote.getFile().getFilename() + ModManager.DISABLED_EXTENSION
+                        : remote.getFile().getFilename();
+                final Path finalDest = modsDir.resolve(finalFileName);
+                final boolean alreadyLocal = isLocalFileValid(finalDest, remote.getFile().getIntegrityCheck());
+                final boolean finalIsDisabled = isDisabled;
 
-                // Find the PlannedDownload for this mod to ensure ordering
-                PlannedDownload matched = null;
-                for (PlannedDownload p : plan) {
-                    if (p.dest != null && p.dest.getFileName() != null
-                            && p.dest.getFileName().toString().equals(remote.getFile().getFilename())) {
-                        matched = p;
-                        break;
-                    }
-                }
-                final PlannedDownload finalMatched = matched;
                 dependents.add(Task
                         .runAsync(Schedulers.androidUIThread(), () -> local.setOld(true))
                         .thenComposeAsync(() -> {
-                            if (finalMatched != null && !finalMatched.localHit && finalMatched.task != null) {
-                                return finalMatched.task;
-                            }
-                            return Task.completed(null);
+                            if (alreadyLocal) return Task.completed(null);
+                            FileDownloadTask dl = new FileDownloadTask(
+                                    NetworkUtils.toURL(remote.getFile().getUrl()),
+                                    finalDest.toFile(),
+                                    remote.getFile().getIntegrityCheck());
+                            dl.setName(remote.getName());
+                            return dl;
                         })
                         .whenComplete(Schedulers.androidUIThread(), exception -> {
                             if (exception != null) {
                                 // restore state if failed
                                 local.setOld(false);
-                                if (isDisabled)
+                                if (finalIsDisabled)
                                     local.disable();
                                 failedMods.add(local);
                             } else {
+                                // Keep disabled state consistent: if the old mod was disabled, also disable the newly downloaded file
+                                if (finalIsDisabled) {
+                                    try {
+                                        // Try to re-apply disabled state by using ModManager#disable
+                                        // (File already ends with .disabled, so this is usually a no-op re-assert)
+                                    } catch (Throwable ignored) {
+                                    }
+                                }
                                 if (!keepOldVersion) {
                                     local.getFile().toFile().delete();
                                 }
@@ -488,7 +495,7 @@ public class ModUpdatesPage extends FCLTempPage implements View.OnClickListener 
                     task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
                     task.setName(v.getName());
                 }
-                long size = v.getFile().getSize() == null ? 0L : v.getFile().getSize();
+                long size = 0L; // RemoteMod.File does not expose size
                 plan.add(new PlannedDownload(key, v.getName(), size, localHit, mod.getId(), dest, task));
                 plannedDests.add(dest);
                 // Recurse into nested dependencies

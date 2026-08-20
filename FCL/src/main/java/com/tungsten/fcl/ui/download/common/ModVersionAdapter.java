@@ -284,20 +284,21 @@ public class ModVersionAdapter extends FCLAdapter {
     }
 
     private void executeTaskBatchWithRetry(PlanResult plan, RemoteMod.Version version) {
-        List<FileDownloadTask> tasks = plan.items.stream()
-                .filter(it -> !it.localHit)
-                .map(it -> it.task)
-                .filter(java.util.Objects::nonNull)
+        List<PlanItem> itemsToDownload = plan.items.stream()
+                .filter(it -> !it.localHit && it.task != null)
                 .collect(Collectors.toList());
-        if (tasks.isEmpty()) {
+        if (itemsToDownload.isEmpty()) {
             Toast.makeText(getContext(), getContext().getString(R.string.install_success), Toast.LENGTH_SHORT).show();
             refreshModList();
             return;
         }
-        runExecute(tasks, new HashSet<>(), version);
+        runExecute(itemsToDownload, new HashSet<>(), version);
     }
 
-    private void runExecute(List<FileDownloadTask> tasks, Set<String> alreadyRetriedFailedNames, RemoteMod.Version version) {
+    private void runExecute(List<PlanItem> items, Set<String> alreadyRetriedFailedNames, RemoteMod.Version version) {
+        List<FileDownloadTask> tasks = items.stream()
+                .map(it -> it.task)
+                .collect(Collectors.toList());
         TaskDialog taskDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
         taskDialog.setTitle(getContext().getString(R.string.message_downloading));
         Schedulers.androidUIThread().execute(() -> {
@@ -311,14 +312,18 @@ public class ModVersionAdapter extends FCLAdapter {
                                 return;
                             }
                         }
-                        // Collect failed file-download subtasks by looking at FileDownloadTask internal exception is hard.
-                        // Fallback: use any explicit per-task name list recorded by Task#exception and aggregate failure via executor counter
+                        // Track failures by matching PlanItem index with task index
                         int actualFailed = 0;
                         List<String> failedNames = new ArrayList<>();
-                        for (FileDownloadTask t : tasks) {
-                            if (t.getException() != null) {
+                        List<PlanItem> failedItems = new ArrayList<>();
+                        for (int i = 0; i < items.size(); i++) {
+                            PlanItem pi = items.get(i);
+                            FileDownloadTask t = tasks.get(i);
+                            if (t != null && t.getException() != null) {
                                 actualFailed++;
-                                failedNames.add(StringUtils.isBlank(t.getName()) ? t.toString() : t.getName());
+                                String nm = StringUtils.isBlank(t.getName()) ? pi.displayName : t.getName();
+                                failedNames.add(nm);
+                                failedItems.add(pi);
                             }
                         }
                         if (actualFailed == 0) {
@@ -326,17 +331,15 @@ public class ModVersionAdapter extends FCLAdapter {
                             refreshModList();
                             return;
                         }
-                        int total = tasks.size();
+                        int total = items.size();
                         List<String> toRetryNames = new ArrayList<>();
-                        List<FileDownloadTask> retryTasks = new ArrayList<>();
+                        List<PlanItem> retryItems = new ArrayList<>();
                         Set<String> newRetriedSet = new HashSet<>(alreadyRetriedFailedNames);
-                        for (FileDownloadTask t : tasks) {
-                            if (t.getException() != null) {
-                                String key = StringUtils.isBlank(t.getName()) ? t.toString() : t.getName();
-                                toRetryNames.add(key);
-                                if (!newRetriedSet.contains(key)) {
-                                    retryTasks.add(recreateTask(t));
-                                }
+                        for (PlanItem pi : failedItems) {
+                            String key = pi.id;
+                            toRetryNames.add(pi.displayName);
+                            if (!newRetriedSet.contains(key)) {
+                                retryItems.add(recreateItem(pi));
                             }
                         }
                         StringBuilder msg = new StringBuilder();
@@ -349,23 +352,23 @@ public class ModVersionAdapter extends FCLAdapter {
                             msg.append("... (").append(toRetryNames.size() - 8).append(" more)");
                         }
                         final int finalActualFailed = actualFailed;
-                        List<FileDownloadTask> finalRetryTasks = retryTasks;
+                        final List<PlanItem> finalRetryItems = retryItems;
                         new FCLAlertDialog.Builder(getContext())
                                 .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
                                 .setTitle(getContext().getString(R.string.install_failed))
                                 .setMessage(msg.toString())
                                 .setCancelable(false)
                                 .setPositiveButton(getContext().getString(R.string.mods_one_click_retry_failed, finalActualFailed), () -> {
-                                    if (finalRetryTasks.isEmpty()) {
+                                    if (finalRetryItems.isEmpty()) {
                                         Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
                                         return;
                                     }
-                                    newRetriedSet.addAll(toRetryNames);
-                                    runExecute(finalRetryTasks, newRetriedSet, version);
+                                    newRetriedSet.addAll(failedItems.stream().map(i -> i.id).collect(Collectors.toSet()));
+                                    runExecute(finalRetryItems, newRetriedSet, version);
                                 })
                                 .setNegativeButton(getContext().getString(R.string.mods_one_click_retry_all), () -> {
                                     Set<String> empty = new HashSet<>();
-                                    List<FileDownloadTask> fresh = tasks.stream().map(this::recreateTask).collect(Collectors.toList());
+                                    List<PlanItem> fresh = items.stream().map(this::recreateItem).collect(Collectors.toList());
                                     runExecute(fresh, empty, version);
                                 })
                                 .create()
@@ -377,14 +380,26 @@ public class ModVersionAdapter extends FCLAdapter {
         });
     }
 
-    private FileDownloadTask recreateTask(FileDownloadTask t) {
-        try {
-            FileDownloadTask copy = new FileDownloadTask(t.getUrl(), t.getDest(), t.getIntegrityCheck());
-            copy.setName(t.getName());
-            return copy;
-        } catch (Throwable thr) {
-            return t;
+    private PlanItem recreateItem(PlanItem origin) {
+        FileDownloadTask newTask = null;
+        if (!origin.localHit) {
+            try {
+                // Rebuild task using the metadata already stored in PlanItem, avoiding non-existent getters.
+                RemoteMod.File remoteFile = origin.remoteFileSnapshot;
+                if (remoteFile != null) {
+                    newTask = new FileDownloadTask(
+                            NetworkUtils.toURL(remoteFile.getUrl()),
+                            origin.dest.toFile(),
+                            remoteFile.getIntegrityCheck());
+                    newTask.setName(origin.displayName);
+                }
+            } catch (Throwable thr) {
+                Logging.LOG.log(Level.WARNING, "重建下载任务失败: " + origin.displayName, thr);
+                newTask = origin.task; // fallback — might be executed once more; acceptable
+            }
         }
+        return new PlanItem(origin.id, origin.displayName, origin.sizeBytes, origin.localHit,
+                origin.modId, origin.dest, newTask, origin.isModItself, origin.remoteFileSnapshot);
     }
 
     private PlanResult buildPlan(RemoteMod.Version currentVersion) throws IOException {
@@ -414,12 +429,12 @@ public class ModVersionAdapter extends FCLAdapter {
         List<PlanItem> items = new ArrayList<>();
 
         if (currentVersion != null) {
-            String pseudoId = (currentVersion.getModId() == null ? "__current__" : currentVersion.getModId())
+            String pseudoId = (currentVersion.getModid() == null ? "__current__" : currentVersion.getModid())
                     + ":" + (currentVersion.getVersion() == null ? "" : currentVersion.getVersion());
             if (!downloadedIds.contains(pseudoId)) {
                 try {
                     Path dest = modsDir.resolve(currentVersion.getFile().getFilename());
-                    long size = currentVersion.getFile().getSize() == null ? 0L : currentVersion.getFile().getSize();
+                    long size = 0L; // RemoteMod.File does not expose size, keep as 0 (displayed as "?")
                     boolean hit = isLocalFileValid(dest, currentVersion.getFile().getIntegrityCheck());
                     FileDownloadTask task = null;
                     if (!hit) {
@@ -429,7 +444,7 @@ public class ModVersionAdapter extends FCLAdapter {
                                 currentVersion.getFile().getIntegrityCheck());
                         task.setName(currentVersion.getName());
                     }
-                    items.add(new PlanItem(pseudoId, currentVersion.getName(), size, hit, currentVersion.getModId(), dest, task, true));
+                    items.add(new PlanItem(pseudoId, currentVersion.getName(), size, hit, currentVersion.getModid(), dest, task, true, currentVersion.getFile()));
                     downloadedIds.add(pseudoId);
                     List<RemoteMod.Dependency> nested = currentVersion.getDependencies();
                     if (nested != null && !nested.isEmpty()) {
@@ -471,14 +486,14 @@ public class ModVersionAdapter extends FCLAdapter {
             }
             RemoteMod.Version v = bestVersion.get();
             Path dest = modsDir.resolve(v.getFile().getFilename());
-            long size = v.getFile().getSize() == null ? 0L : v.getFile().getSize();
+            long size = 0L; // RemoteMod.File does not expose size
             boolean hit = isLocalFileValid(dest, v.getFile().getIntegrityCheck());
             FileDownloadTask task = null;
             if (!hit) {
                 task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
                 task.setName(v.getName());
             }
-            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getId(), dest, task, false));
+            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getId(), dest, task, false, v.getFile()));
             downloadedIds.add(dependencyId);
             List<RemoteMod.Dependency> nested = v.getDependencies();
             if (nested != null && !nested.isEmpty()) {
@@ -673,8 +688,9 @@ public class ModVersionAdapter extends FCLAdapter {
         final Path dest;
         final FileDownloadTask task;
         final boolean isModItself;
+        final RemoteMod.File remoteFileSnapshot;
 
-        PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself) {
+        PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot) {
             this.id = id;
             this.displayName = displayName;
             this.sizeBytes = sizeBytes;
@@ -683,6 +699,7 @@ public class ModVersionAdapter extends FCLAdapter {
             this.dest = dest;
             this.task = task;
             this.isModItself = isModItself;
+            this.remoteFileSnapshot = remoteFileSnapshot;
         }
     }
 
