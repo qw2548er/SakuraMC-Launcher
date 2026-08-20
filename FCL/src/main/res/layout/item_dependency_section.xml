@@ -9,7 +9,7 @@
     android:paddingStart="4dp"
     android:paddingEnd="4dp"
     android:background="?android:attr/selectableItemBackground"
-    android:addStatesWithChildren="false">
+    android:addStatesFromChildren="false">
 
     <ImageView
         android:id="@+id/expand_icon"
