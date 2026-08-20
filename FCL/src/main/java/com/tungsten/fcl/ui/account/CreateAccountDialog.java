@@ -164,6 +164,21 @@ public class CreateAccountDialog extends FCLDialog implements View.OnClickListen
         if (!(factory instanceof MicrosoftAccountFactory))
             cancel.setEnabled(false);
 
+        if (factory instanceof MicrosoftAccountFactory && !OAuthServer.Factory.isClientIdConfigured()) {
+            new FCLAlertDialog.Builder(getContext())
+                    .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
+                    .setMessage(getContext().getString(R.string.account_methods_microsoft_error_client_not_configured))
+                    .setCancelable(false)
+                    .setNegativeButton(getContext().getString(com.tungsten.fcllibrary.R.string.dialog_positive), () -> {
+                        login.setEnabled(true);
+                        cancel.setEnabled(true);
+                    })
+                    .useAutoLink()
+                    .create()
+                    .show();
+            return;
+        }
+
         String username;
         String password;
         Object additionalData;

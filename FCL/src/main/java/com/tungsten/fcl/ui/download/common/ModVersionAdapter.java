@@ -18,7 +18,9 @@ import com.tungsten.fcl.ui.TaskDialog;
 import com.tungsten.fcl.ui.manage.ManagePageManager;
 import com.tungsten.fcl.util.TaskCancellationAction;
 import com.tungsten.fclcore.download.LibraryAnalyzer;
+import com.tungsten.fclcore.mod.LocalModFile;
 import com.tungsten.fclcore.mod.ModLoaderType;
+import com.tungsten.fclcore.mod.ModManager;
 import com.tungsten.fclcore.mod.RemoteMod;
 import com.tungsten.fclcore.mod.RemoteModRepository;
 import com.tungsten.fclcore.task.FileDownloadTask;
@@ -27,8 +29,10 @@ import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.util.DigestUtils;
 import com.tungsten.fclcore.util.Logging;
+import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fclcore.util.io.NetworkUtils;
 import com.tungsten.fcllibrary.component.FCLAdapter;
+import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog;
 import com.tungsten.fcllibrary.component.theme.ThemeEngine;
 import com.tungsten.fcllibrary.component.view.FCLButton;
 import com.tungsten.fcllibrary.component.view.FCLLinearLayout;
@@ -49,6 +53,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -111,56 +116,415 @@ public class ModVersionAdapter extends FCLAdapter {
     }
 
     private void setupDependencyButton(ViewHolder viewHolder, RemoteMod.Version version) {
-        List<RemoteMod.Dependency> requiredDependencies = version.getDependencies().stream()
-                .filter(d -> d.getType() == RemoteMod.DependencyType.REQUIRED
-                        || d.getType() == RemoteMod.DependencyType.TOOL)
-                .collect(Collectors.toList());
-
-        if (requiredDependencies.isEmpty()) {
-            viewHolder.downloadDependencies.setVisibility(View.GONE);
-            return;
-        }
-
+        // Always enable the one-click button now — it downloads the mod itself even if there are 0 deps.
         viewHolder.downloadDependencies.setVisibility(View.VISIBLE);
         viewHolder.downloadDependencies.setEnabled(true);
         viewHolder.downloadDependencies.setText(getContext().getString(R.string.button_one_click_download_deps));
-        viewHolder.downloadDependencies.setOnClickListener(v -> downloadDependencies(version));
+        viewHolder.downloadDependencies.setOnClickListener(v -> startOneClickDownloadFlow(version));
     }
 
-    private void downloadDependencies(RemoteMod.Version version) {
-        List<RemoteMod.Dependency> dependencies = version.getDependencies().stream()
-                .filter(d -> d.getType() == RemoteMod.DependencyType.REQUIRED
-                        || d.getType() == RemoteMod.DependencyType.TOOL)
-                .collect(Collectors.toList());
+    private void startOneClickDownloadFlow(RemoteMod.Version version) {
+        // P2-9 Step 1: Validate the current version matches game-version + mod-loader.
+        checkCurrentVersionCompatibility(version, () -> runPlanAndConfirm(version));
+    }
 
-        TaskDialog taskDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
-        taskDialog.setTitle(getContext().getString(R.string.message_downloading));
+    private void checkCurrentVersionCompatibility(RemoteMod.Version version, Runnable onContinue) {
+        Profile profile = Profiles.getSelectedProfile();
+        String selectedVersion = profile.getSelectedVersion();
+        String currentGameVersion = "";
+        Set<ModLoaderType> currentLoaders = Collections.emptySet();
+        if (profile.getRepository().hasVersion(selectedVersion)) {
+            LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(
+                    profile.getRepository().getResolvedPreservingPatchesVersion(selectedVersion),
+                    selectedVersion);
+            currentLoaders = analyzer.getModLoaders();
+            currentGameVersion = analyzer.getVersion(LibraryAnalyzer.LibraryType.MINECRAFT).orElse("");
+        }
+        boolean gameVersionOk = StringUtils.isBlank(currentGameVersion)
+                || (version.getGameVersions() != null && version.getGameVersions().contains(currentGameVersion));
+        boolean loaderOk = currentLoaders.isEmpty() || (version.getLoaders() != null && version.getLoaders().stream()
+                .anyMatch(currentLoaders::contains));
+        if (gameVersionOk && loaderOk) {
+            onContinue.run();
+            return;
+        }
+        String declaredGame = version.getGameVersions() == null ? "[]" : version.getGameVersions().toString();
+        String declaredLoaders = version.getLoaders() == null ? "[]" : version.getLoaders().toString();
+        String currentGame = StringUtils.isBlank(currentGameVersion) ? "(unknown)" : currentGameVersion;
+        String currentLoader = currentLoaders.isEmpty() ? "(unknown)" : currentLoaders.toString();
+        new FCLAlertDialog.Builder(getContext())
+                .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
+                .setTitle(getContext().getString(R.string.mods_one_click_loader_mismatch_title))
+                .setMessage(getContext().getString(R.string.mods_one_click_loader_mismatch_desc,
+                        version.getName(),
+                        declaredGame,
+                        declaredLoaders,
+                        currentGame,
+                        currentLoader))
+                .setCancelable(false)
+                .setPositiveButton(getContext().getString(R.string.mods_one_click_loader_mismatch_continue), onContinue)
+                .setNegativeButton(null)
+                .create()
+                .show();
+    }
+
+    private void runPlanAndConfirm(RemoteMod.Version version) {
+        TaskDialog planDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
+        planDialog.setTitle(getContext().getString(R.string.mods_check_updates));
         Schedulers.androidUIThread().execute(() -> {
-            TaskExecutor executor = Task.supplyAsync(() -> buildDependencyDownloadTasks(version, dependencies))
-                    .thenComposeAsync(tasks -> {
-                        if (tasks.isEmpty()) {
-                            // 本体本地已存在 + 所有依赖也都本地已存在：返回空 completed Task，避免 allOf 空列表歧义
-                            return Task.completed(null);
-                        }
-                        return Task.allOf(tasks);
-                    })
-                    .whenComplete(Schedulers.androidUIThread(), (result, exception) -> {
+            final PlanResult[] holder = new PlanResult[1];
+            TaskExecutor executor = Task.supplyAsync(() -> buildPlan(version))
+                    .whenComplete(Schedulers.androidUIThread(), (plan, exception) -> {
+                        planDialog.dismiss();
                         if (exception != null) {
                             if (exception instanceof CancellationException) {
                                 Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
                             } else {
-                                Logging.LOG.log(Level.WARNING, "依赖下载失败", exception);
+                                Logging.LOG.log(Level.WARNING, "构建一键下载清单失败", exception);
                                 Toast.makeText(getContext(), getContext().getString(R.string.download_failed_refresh), Toast.LENGTH_SHORT).show();
                             }
-                        } else {
+                            return;
+                        }
+                        holder[0] = plan;
+                        if (plan.items.isEmpty()) {
+                            Toast.makeText(getContext(), getContext().getString(R.string.mods_dependency_none_required), Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        showPlanDialog(plan, version);
+                    }).executor();
+            planDialog.setExecutor(executor);
+            planDialog.show();
+            executor.start();
+        });
+    }
+
+    private void showPlanDialog(PlanResult plan, RemoteMod.Version version) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getContext().getString(R.string.mods_one_click_plan_summary,
+                plan.downloadingCount, formatSize(plan.totalBytesEstimate)));
+        sb.append("\n\n");
+        for (PlanItem item : plan.items) {
+            if (item.isModItself) {
+                sb.append("• ")
+                        .append(getContext().getString(R.string.mods_one_click_plan_item_mod, item.displayName, formatSize(item.sizeBytes)));
+            } else {
+                sb.append("• ")
+                        .append(getContext().getString(R.string.mods_one_click_plan_item_dep, item.displayName, formatSize(item.sizeBytes)));
+            }
+            if (item.localHit) {
+                sb.append(" — ").append(getContext().getString(R.string.mods_one_click_plan_item_local_hit));
+            }
+            sb.append("\n");
+        }
+        new FCLAlertDialog.Builder(getContext())
+                .setAlertLevel(FCLAlertDialog.AlertLevel.INFO)
+                .setTitle(getContext().getString(R.string.mods_one_click_plan_title))
+                .setMessage(sb.toString())
+                .setCancelable(false)
+                .setPositiveButton(getContext().getString(R.string.button_download), () -> {
+                    ConflictCheckResult conflicts = findConflicts(plan);
+                    if (conflicts.hasConflict()) {
+                        showConflictDialog(conflicts, () -> actuallyExecutePlan(plan, version, true));
+                    } else {
+                        actuallyExecutePlan(plan, version, false);
+                    }
+                })
+                .setNegativeButton(null)
+                .create()
+                .show();
+    }
+
+    private void showConflictDialog(ConflictCheckResult conflicts, Runnable onRemoveOldAndContinue) {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (ConflictItem c : conflicts.conflicts) {
+            if (!first) sb.append("\n\n");
+            first = false;
+            sb.append(getContext().getString(R.string.mods_one_click_conflict_desc,
+                    c.modId,
+                    c.installed == null ? "(unknown)" : c.installed.getName() + " / " + c.installed.getFileName(),
+                    c.toDownload));
+        }
+        new FCLAlertDialog.Builder(getContext())
+                .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
+                .setTitle(getContext().getString(R.string.mods_one_click_conflict_title))
+                .setMessage(sb.toString())
+                .setCancelable(false)
+                .setPositiveButton(getContext().getString(R.string.mods_one_click_conflict_action_remove), onRemoveOldAndContinue)
+                .setNegativeButton(getContext().getString(R.string.mods_one_click_conflict_action_keep), () -> actuallyExecutePlan(PlanResult.ofFiltered(conflicts.plan, item -> true), null, false))
+                .create()
+                .show();
+    }
+
+    private void actuallyExecutePlan(PlanResult plan, RemoteMod.Version version, boolean removeConflictOldVersionsFirst) {
+        if (removeConflictOldVersionsFirst) {
+            removeConflictingLocalVersions(plan);
+        }
+        executeTaskBatchWithRetry(plan, version);
+    }
+
+    private void removeConflictingLocalVersions(PlanResult plan) {
+        ConflictCheckResult conflicts = findConflicts(plan);
+        Profile profile = Profiles.getSelectedProfile();
+        String selectedVersion = profile.getSelectedVersion();
+        if (!profile.getRepository().hasVersion(selectedVersion)) return;
+        ModManager modManager = profile.getRepository().getModManager(selectedVersion);
+        List<LocalModFile> toRemove = new ArrayList<>();
+        for (ConflictItem c : conflicts.conflicts) {
+            if (c.installed != null) {
+                toRemove.add(c.installed);
+            }
+        }
+        if (toRemove.isEmpty()) return;
+        try {
+            modManager.removeMods(toRemove.toArray(new LocalModFile[0]));
+        } catch (Throwable t) {
+            Logging.LOG.log(Level.WARNING, "删除冲突的旧版本失败（继续下载，可能导致双版本冲突）", t);
+        }
+    }
+
+    private void executeTaskBatchWithRetry(PlanResult plan, RemoteMod.Version version) {
+        List<FileDownloadTask> tasks = plan.items.stream()
+                .filter(it -> !it.localHit)
+                .map(it -> it.task)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+        if (tasks.isEmpty()) {
+            Toast.makeText(getContext(), getContext().getString(R.string.install_success), Toast.LENGTH_SHORT).show();
+            refreshModList();
+            return;
+        }
+        runExecute(tasks, new HashSet<>(), version);
+    }
+
+    private void runExecute(List<FileDownloadTask> tasks, Set<String> alreadyRetriedFailedNames, RemoteMod.Version version) {
+        TaskDialog taskDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
+        taskDialog.setTitle(getContext().getString(R.string.message_downloading));
+        Schedulers.androidUIThread().execute(() -> {
+            final String[] failed = new String[1];
+            AtomicInteger failedCount = new AtomicInteger(0);
+            TaskExecutor executor = Task.allOf(tasks)
+                    .whenComplete(Schedulers.androidUIThread(), (v, exception) -> {
+                        if (exception != null) {
+                            if (exception instanceof CancellationException) {
+                                Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
+                                return;
+                            }
+                        }
+                        // Collect failed file-download subtasks by looking at FileDownloadTask internal exception is hard.
+                        // Fallback: use any explicit per-task name list recorded by Task#exception and aggregate failure via executor counter
+                        int actualFailed = 0;
+                        List<String> failedNames = new ArrayList<>();
+                        for (FileDownloadTask t : tasks) {
+                            if (t.getException() != null) {
+                                actualFailed++;
+                                failedNames.add(StringUtils.isBlank(t.getName()) ? t.toString() : t.getName());
+                            }
+                        }
+                        if (actualFailed == 0) {
                             Toast.makeText(getContext(), getContext().getString(R.string.install_success), Toast.LENGTH_SHORT).show();
                             refreshModList();
+                            return;
                         }
+                        int total = tasks.size();
+                        List<String> toRetryNames = new ArrayList<>();
+                        List<FileDownloadTask> retryTasks = new ArrayList<>();
+                        Set<String> newRetriedSet = new HashSet<>(alreadyRetriedFailedNames);
+                        for (FileDownloadTask t : tasks) {
+                            if (t.getException() != null) {
+                                String key = StringUtils.isBlank(t.getName()) ? t.toString() : t.getName();
+                                toRetryNames.add(key);
+                                if (!newRetriedSet.contains(key)) {
+                                    retryTasks.add(recreateTask(t));
+                                }
+                            }
+                        }
+                        StringBuilder msg = new StringBuilder();
+                        msg.append(getContext().getString(R.string.mods_one_click_failed_some, actualFailed, total))
+                                .append("\n\n");
+                        for (int i = 0; i < Math.min(toRetryNames.size(), 8); i++) {
+                            msg.append("• ").append(toRetryNames.get(i)).append("\n");
+                        }
+                        if (toRetryNames.size() > 8) {
+                            msg.append("... (").append(toRetryNames.size() - 8).append(" more)");
+                        }
+                        final int finalActualFailed = actualFailed;
+                        List<FileDownloadTask> finalRetryTasks = retryTasks;
+                        new FCLAlertDialog.Builder(getContext())
+                                .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
+                                .setTitle(getContext().getString(R.string.install_failed))
+                                .setMessage(msg.toString())
+                                .setCancelable(false)
+                                .setPositiveButton(getContext().getString(R.string.mods_one_click_retry_failed, finalActualFailed), () -> {
+                                    if (finalRetryTasks.isEmpty()) {
+                                        Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
+                                        return;
+                                    }
+                                    newRetriedSet.addAll(toRetryNames);
+                                    runExecute(finalRetryTasks, newRetriedSet, version);
+                                })
+                                .setNegativeButton(getContext().getString(R.string.mods_one_click_retry_all), () -> {
+                                    Set<String> empty = new HashSet<>();
+                                    List<FileDownloadTask> fresh = tasks.stream().map(this::recreateTask).collect(Collectors.toList());
+                                    runExecute(fresh, empty, version);
+                                })
+                                .create()
+                                .show();
                     }).executor();
             taskDialog.setExecutor(executor);
             taskDialog.show();
             executor.start();
         });
+    }
+
+    private FileDownloadTask recreateTask(FileDownloadTask t) {
+        try {
+            FileDownloadTask copy = new FileDownloadTask(t.getUrl(), t.getDest(), t.getIntegrityCheck());
+            copy.setName(t.getName());
+            return copy;
+        } catch (Throwable thr) {
+            return t;
+        }
+    }
+
+    private PlanResult buildPlan(RemoteMod.Version currentVersion) throws IOException {
+        List<RemoteMod.Dependency> dependencies = (currentVersion.getDependencies() == null ? Collections.emptyList() : currentVersion.getDependencies()).stream()
+                .filter(d -> d.getType() == RemoteMod.DependencyType.REQUIRED
+                        || d.getType() == RemoteMod.DependencyType.TOOL)
+                .collect(Collectors.toList());
+
+        Profile profile = Profiles.getSelectedProfile();
+        String selectedVersion = profile.getSelectedVersion();
+        String currentGameVersion = "";
+        Set<ModLoaderType> currentLoaders = Collections.emptySet();
+        if (profile.getRepository().hasVersion(selectedVersion)) {
+            LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(
+                    profile.getRepository().getResolvedPreservingPatchesVersion(selectedVersion),
+                    selectedVersion);
+            currentLoaders = analyzer.getModLoaders();
+            currentGameVersion = analyzer.getVersion(LibraryAnalyzer.LibraryType.MINECRAFT).orElse("");
+        }
+
+        Path runDirectory = profile.getRepository().hasVersion(selectedVersion)
+                ? profile.getRepository().getRunDirectory(selectedVersion).toPath()
+                : profile.getRepository().getBaseDirectory().toPath();
+        Path modsDir = runDirectory.resolve("mods");
+
+        Set<String> downloadedIds = new HashSet<>();
+        List<PlanItem> items = new ArrayList<>();
+
+        if (currentVersion != null) {
+            String pseudoId = (currentVersion.getModId() == null ? "__current__" : currentVersion.getModId())
+                    + ":" + (currentVersion.getVersion() == null ? "" : currentVersion.getVersion());
+            if (!downloadedIds.contains(pseudoId)) {
+                try {
+                    Path dest = modsDir.resolve(currentVersion.getFile().getFilename());
+                    long size = currentVersion.getFile().getSize() == null ? 0L : currentVersion.getFile().getSize();
+                    boolean hit = isLocalFileValid(dest, currentVersion.getFile().getIntegrityCheck());
+                    FileDownloadTask task = null;
+                    if (!hit) {
+                        task = new FileDownloadTask(
+                                NetworkUtils.toURL(currentVersion.getFile().getUrl()),
+                                dest.toFile(),
+                                currentVersion.getFile().getIntegrityCheck());
+                        task.setName(currentVersion.getName());
+                    }
+                    items.add(new PlanItem(pseudoId, currentVersion.getName(), size, hit, currentVersion.getModId(), dest, task, true));
+                    downloadedIds.add(pseudoId);
+                    List<RemoteMod.Dependency> nested = currentVersion.getDependencies();
+                    if (nested != null && !nested.isEmpty()) {
+                        for (RemoteMod.Dependency d : nested) {
+                            planDependencyRecursively(d, currentGameVersion, currentLoaders, modsDir, downloadedIds, items, 1);
+                        }
+                    }
+                } catch (Throwable t) {
+                    Logging.LOG.log(Level.WARNING, "规划模组本体失败: " + currentVersion.getName(), t);
+                }
+            }
+        }
+
+        for (RemoteMod.Dependency dependency : dependencies) {
+            planDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir, downloadedIds, items, 0);
+        }
+
+        long totalBytesEstimate = 0L;
+        int downloadingCount = 0;
+        for (PlanItem it : items) {
+            totalBytesEstimate += it.sizeBytes;
+            if (!it.localHit) downloadingCount++;
+        }
+        return new PlanResult(items, downloadingCount, totalBytesEstimate, currentGameVersion, currentLoaders, modsDir);
+    }
+
+    private void planDependencyRecursively(RemoteMod.Dependency dependency, String currentGameVersion,
+                                           Set<ModLoaderType> currentLoaders, Path modsDir,
+                                           Set<String> downloadedIds, List<PlanItem> items, int depth) {
+        String dependencyId = dependency.getId();
+        if (downloadedIds.contains(dependencyId)) return;
+        try {
+            RemoteMod mod = dependency.load();
+            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(
+                    mod, currentGameVersion, currentLoaders, dependency.getRemoteModRepository());
+            if (bestVersion.isEmpty()) {
+                downloadedIds.add(dependencyId);
+                return;
+            }
+            RemoteMod.Version v = bestVersion.get();
+            Path dest = modsDir.resolve(v.getFile().getFilename());
+            long size = v.getFile().getSize() == null ? 0L : v.getFile().getSize();
+            boolean hit = isLocalFileValid(dest, v.getFile().getIntegrityCheck());
+            FileDownloadTask task = null;
+            if (!hit) {
+                task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
+                task.setName(v.getName());
+            }
+            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getId(), dest, task, false));
+            downloadedIds.add(dependencyId);
+            List<RemoteMod.Dependency> nested = v.getDependencies();
+            if (nested != null && !nested.isEmpty()) {
+                for (RemoteMod.Dependency child : nested) {
+                    if (child.getType() == RemoteMod.DependencyType.REQUIRED || child.getType() == RemoteMod.DependencyType.TOOL) {
+                        planDependencyRecursively(child, currentGameVersion, currentLoaders, modsDir, downloadedIds, items, depth + 1);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Logging.LOG.log(Level.WARNING, "规划依赖失败: " + dependencyId, t);
+            downloadedIds.add(dependencyId);
+        }
+    }
+
+    private ConflictCheckResult findConflicts(PlanResult plan) {
+        Profile profile = Profiles.getSelectedProfile();
+        String selectedVersion = profile.getSelectedVersion();
+        List<ConflictItem> conflicts = new ArrayList<>();
+        if (!profile.getRepository().hasVersion(selectedVersion)) {
+            return new ConflictCheckResult(plan, conflicts);
+        }
+        ModManager modManager = profile.getRepository().getModManager(selectedVersion);
+        List<LocalModFile> localMods;
+        try {
+            localMods = modManager.getMods();
+        } catch (Throwable t) {
+            Logging.LOG.log(Level.WARNING, "读取本地模组列表失败，跳过冲突检测", t);
+            return new ConflictCheckResult(plan, conflicts);
+        }
+        for (PlanItem item : plan.items) {
+            if (item.localHit) continue;
+            if (StringUtils.isBlank(item.modId)) continue;
+            for (LocalModFile installed : localMods) {
+                LocalModFile.LocalMod local = installed.getLocalMod();
+                if (local == null) continue;
+                String id = local.getId();
+                if (!item.modId.equalsIgnoreCase(id)) continue;
+                // Skip if target path equals the installed path (same file overwrite — safe)
+                if (installed.getFile() != null && item.dest != null && installed.getFile().toPath().equals(item.dest)) {
+                    continue;
+                }
+                conflicts.add(new ConflictItem(item.modId, installed, item.displayName + " @ " + item.dest.getFileName()));
+            }
+        }
+        return new ConflictCheckResult(plan, conflicts);
     }
 
     private void refreshModList() {
@@ -176,144 +540,16 @@ public class ModVersionAdapter extends FCLAdapter {
         }
     }
 
-    private List<Task<?>> buildDependencyDownloadTasks(RemoteMod.Version currentVersion,
-                                                       List<RemoteMod.Dependency> dependencies) throws IOException {
-        Profile profile = Profiles.getSelectedProfile();
-        String selectedVersion = profile.getSelectedVersion();
-        String currentGameVersion = "";
-        Set<ModLoaderType> currentLoaders = Collections.emptySet();
-        if (profile.getRepository().hasVersion(selectedVersion)) {
-            LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(
-                    profile.getRepository().getResolvedPreservingPatchesVersion(selectedVersion),
-                    selectedVersion);
-            currentLoaders = analyzer.getModLoaders();
-            currentGameVersion = analyzer.getVersion(LibraryAnalyzer.LibraryType.MINECRAFT).orElse("");
+    private static String formatSize(long bytes) {
+        if (bytes <= 0L) return "?";
+        double b = bytes;
+        String[] units = {"B", "KB", "MB", "GB"};
+        int u = 0;
+        while (b >= 1024 && u < units.length - 1) {
+            b /= 1024;
+            u++;
         }
-
-        Logging.LOG.log(Level.INFO, "开始构建一键下载任务（模组本体 + 依赖）: 游戏版本=" + currentGameVersion + ", 加载器=" + currentLoaders);
-
-        Path runDirectory = profile.getRepository().hasVersion(selectedVersion)
-                ? profile.getRepository().getRunDirectory(selectedVersion).toPath()
-                : profile.getRepository().getBaseDirectory().toPath();
-        Path modsDir = runDirectory.resolve("mods");
-
-        Set<String> downloadedIds = new HashSet<>();
-        List<Task<?>> tasks = new ArrayList<>();
-
-        // 首先处理当前选中的模组本体（真正的"一键下载"：不只是依赖，还要下载模组本身）
-        // 注意：下面所有依赖逻辑一律保持原样不动，仅额外处理本体
-        if (currentVersion != null) {
-            String pseudoId = (currentVersion.getModId() == null ? "__current__" : currentVersion.getModId())
-                    + ":" + (currentVersion.getVersion() == null ? "" : currentVersion.getVersion());
-            if (!downloadedIds.contains(pseudoId)) {
-                try {
-                    Logging.LOG.log(Level.INFO, "[0] 处理当前模组本体: " + currentVersion.getName() + " (" + pseudoId + ")");
-                    Path dest = modsDir.resolve(currentVersion.getFile().getFilename());
-
-                    if (isLocalFileValid(dest, currentVersion.getFile().getIntegrityCheck())) {
-                        Logging.LOG.log(Level.INFO, "[0] 本地已存在且哈希匹配，跳过下载: " + currentVersion.getName());
-                        downloadedIds.add(pseudoId);
-
-                        List<RemoteMod.Dependency> nestedDependencies = currentVersion.getDependencies();
-                        if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
-                            Logging.LOG.log(Level.INFO, "[0] 递归解析本体声明的 " + nestedDependencies.size() + " 个子依赖");
-                            for (RemoteMod.Dependency nested : nestedDependencies) {
-                                downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
-                                        modsDir, downloadedIds, tasks, 1);
-                            }
-                        }
-                    } else {
-                        FileDownloadTask task = new FileDownloadTask(
-                                NetworkUtils.toURL(currentVersion.getFile().getUrl()),
-                                dest.toFile(),
-                                currentVersion.getFile().getIntegrityCheck());
-                        task.setName(currentVersion.getName());
-                        tasks.add(task);
-                        downloadedIds.add(pseudoId);
-                        Logging.LOG.log(Level.INFO, "[0] 创建下载任务: " + currentVersion.getName() + " -> " + dest);
-
-                        List<RemoteMod.Dependency> nestedDependencies = currentVersion.getDependencies();
-                        if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
-                            Logging.LOG.log(Level.INFO, "[0] 递归解析本体声明的 " + nestedDependencies.size() + " 个子依赖");
-                            for (RemoteMod.Dependency nested : nestedDependencies) {
-                                downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
-                                        modsDir, downloadedIds, tasks, 1);
-                            }
-                        }
-                    }
-                } catch (Throwable e) {
-                    Logging.LOG.log(Level.WARNING, "[0] 处理当前模组本体失败: " + pseudoId, e);
-                    // 不往 downloadedIds 里塞，留给依赖循环再试一次（概率极低）
-                }
-            }
-        }
-
-        for (RemoteMod.Dependency dependency : dependencies) {
-            downloadDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir, downloadedIds, tasks, 0);
-        }
-
-        Logging.LOG.log(Level.INFO, "依赖下载任务构建完成: 共 " + tasks.size() + " 个任务（含模组本体）");
-        return tasks;
-    }
-
-    private void downloadDependencyRecursively(RemoteMod.Dependency dependency, String currentGameVersion,
-                                                Set<ModLoaderType> currentLoaders, Path modsDir,
-                                                Set<String> downloadedIds, List<Task<?>> tasks, int depth) {
-        String dependencyId = dependency.getId();
-        if (downloadedIds.contains(dependencyId)) {
-            Logging.LOG.log(Level.FINE, "依赖已处理过，跳过: " + dependencyId);
-            return;
-        }
-
-        try {
-            RemoteMod mod = dependency.load();
-            Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "处理依赖: " + mod.getTitle() + " (" + dependencyId + ")");
-
-            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(
-                    mod, currentGameVersion, currentLoaders, dependency.getRemoteModRepository());
-
-            if (bestVersion.isPresent()) {
-                RemoteMod.Version v = bestVersion.get();
-                Path dest = modsDir.resolve(v.getFile().getFilename());
-
-                if (isLocalFileValid(dest, v.getFile().getIntegrityCheck())) {
-                    Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "本地已存在且哈希匹配，跳过下载: " + v.getName());
-                    downloadedIds.add(dependencyId);
-
-                    List<RemoteMod.Dependency> nestedDependencies = v.getDependencies();
-                    if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
-                        Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "递归下载 " + nestedDependencies.size() + " 个子依赖");
-                        for (RemoteMod.Dependency nested : nestedDependencies) {
-                            downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
-                                    modsDir, downloadedIds, tasks, depth + 1);
-                        }
-                    }
-                    return;
-                }
-
-                FileDownloadTask task = new FileDownloadTask(
-                        NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
-                task.setName(v.getName());
-                tasks.add(task);
-                downloadedIds.add(dependencyId);
-                Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "创建下载任务: " + v.getName() + " -> " + dest);
-
-                List<RemoteMod.Dependency> nestedDependencies = v.getDependencies();
-                if (nestedDependencies != null && !nestedDependencies.isEmpty()) {
-                    Logging.LOG.log(Level.INFO, "[" + "  ".repeat(depth) + "递归下载 " + nestedDependencies.size() + " 个子依赖");
-                    for (RemoteMod.Dependency nested : nestedDependencies) {
-                        downloadDependencyRecursively(nested, currentGameVersion, currentLoaders,
-                                modsDir, downloadedIds, tasks, depth + 1);
-                    }
-                }
-            } else {
-                Logging.LOG.log(Level.WARNING, "[" + "  ".repeat(depth) + "未找到与游戏版本 " + currentGameVersion + " 匹配的版本，跳过: " + mod.getTitle());
-                downloadedIds.add(dependencyId);
-            }
-        } catch (Throwable e) {
-            Logging.LOG.log(Level.WARNING, "[" + "  ".repeat(depth) + "处理依赖失败: " + dependencyId, e);
-            downloadedIds.add(dependencyId);
-        }
+        return String.format(Locale.ROOT, "%.1f %s", b, units[u]);
     }
 
     private boolean isLocalFileValid(Path dest, FileDownloadTask.IntegrityCheck integrityCheck) {
@@ -358,11 +594,12 @@ public class ModVersionAdapter extends FCLAdapter {
     private Optional<RemoteMod.Version> filterAndSelect(
             List<RemoteMod.Version> versions, String gameVersion, Set<ModLoaderType> loaders) {
         Stream<RemoteMod.Version> stream = versions.stream();
-        if (!gameVersion.isEmpty()) {
-            stream = stream.filter(v -> v.getGameVersions().contains(gameVersion));
+        if (!StringUtils.isBlank(gameVersion)) {
+            stream = stream.filter(v -> v.getGameVersions() != null && v.getGameVersions().contains(gameVersion));
         }
-        if (!loaders.isEmpty()) {
+        if (loaders != null && !loaders.isEmpty()) {
             stream = stream.filter(v -> {
+                if (v.getLoaders() == null) return false;
                 for (ModLoaderType loader : v.getLoaders()) {
                     if (loaders.contains(loader)) {
                         return true;
@@ -402,6 +639,15 @@ public class ModVersionAdapter extends FCLAdapter {
                 case QUILT:
                     stringBuilder.append("   ").append(context.getString(R.string.install_installer_quilt));
                     break;
+                case NEO_FORGE:
+                    stringBuilder.append("   ").append(context.getString(R.string.install_installer_neoforge));
+                    break;
+                case CLEANROOM:
+                    stringBuilder.append("   ").append(context.getString(R.string.install_installer_cleanroom));
+                    break;
+                case UNKNOWN:
+                default:
+                    break;
             }
         }
         return stringBuilder.toString();
@@ -411,6 +657,87 @@ public class ModVersionAdapter extends FCLAdapter {
         void onItemSelect(RemoteMod.Version version);
     }
 
-    @SuppressLint("ConstantLocale")
-    public static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.FULL).withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter
+            .ofLocalizedDateTime(FormatStyle.MEDIUM)
+            .withLocale(Locale.getDefault())
+            .withZone(ZoneId.systemDefault());
+
+    // === Small PODOs for plan flow ===
+
+    private static class PlanItem {
+        final String id;
+        final String displayName;
+        final long sizeBytes;
+        final boolean localHit;
+        final String modId;
+        final Path dest;
+        final FileDownloadTask task;
+        final boolean isModItself;
+
+        PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself) {
+            this.id = id;
+            this.displayName = displayName;
+            this.sizeBytes = sizeBytes;
+            this.localHit = localHit;
+            this.modId = modId;
+            this.dest = dest;
+            this.task = task;
+            this.isModItself = isModItself;
+        }
+    }
+
+    private static class PlanResult {
+        final List<PlanItem> items;
+        final int downloadingCount;
+        final long totalBytesEstimate;
+        final String gameVersion;
+        final Set<ModLoaderType> loaders;
+        final Path modsDir;
+
+        PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir) {
+            this.items = items;
+            this.downloadingCount = downloadingCount;
+            this.totalBytesEstimate = totalBytesEstimate;
+            this.gameVersion = gameVersion;
+            this.loaders = loaders;
+            this.modsDir = modsDir;
+        }
+
+        static PlanResult ofFiltered(PlanResult origin, java.util.function.Predicate<PlanItem> keep) {
+            List<PlanItem> kept = origin.items.stream().filter(keep).collect(Collectors.toList());
+            int down = 0;
+            long total = 0L;
+            for (PlanItem it : kept) {
+                if (!it.localHit) down++;
+                total += it.sizeBytes;
+            }
+            return new PlanResult(kept, down, total, origin.gameVersion, origin.loaders, origin.modsDir);
+        }
+    }
+
+    private static class ConflictItem {
+        final String modId;
+        final LocalModFile installed;
+        final String toDownload;
+
+        ConflictItem(String modId, LocalModFile installed, String toDownload) {
+            this.modId = modId;
+            this.installed = installed;
+            this.toDownload = toDownload;
+        }
+    }
+
+    private static class ConflictCheckResult {
+        final PlanResult plan;
+        final List<ConflictItem> conflicts;
+
+        ConflictCheckResult(PlanResult plan, List<ConflictItem> conflicts) {
+            this.plan = plan;
+            this.conflicts = conflicts;
+        }
+
+        boolean hasConflict() {
+            return !conflicts.isEmpty();
+        }
+    }
 }

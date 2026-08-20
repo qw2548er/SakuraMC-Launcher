@@ -54,6 +54,10 @@ public class OAuth {
     }
 
     public Result authenticate(GrantFlow grantFlow, Options options) throws AuthenticationException {
+        String clientId = options.callback.getClientId();
+        if (isBlankOrNullLiteral(clientId)) {
+            throw new OAuthClientNotConfiguredException();
+        }
         try {
             switch (grantFlow) {
                 case AUTHORIZATION_CODE:
@@ -76,6 +80,12 @@ public class OAuth {
         } catch (JsonParseException e) {
             throw new ServerResponseMalformedException(e);
         }
+    }
+
+    private static boolean isBlankOrNullLiteral(String s) {
+        if (s == null) return true;
+        String trimmed = s.trim();
+        return trimmed.isEmpty() || "null".equalsIgnoreCase(trimmed);
     }
 
     private Result authenticateAuthorizationCode(Options options) throws IOException, InterruptedException, JsonParseException, ExecutionException, AuthenticationException {
@@ -158,6 +168,9 @@ public class OAuth {
     }
 
     public Result refresh(String refreshToken, Options options) throws AuthenticationException {
+        if (isBlankOrNullLiteral(options.callback.getClientId())) {
+            throw new OAuthClientNotConfiguredException();
+        }
         try {
             Map<String, String> query = mapOf(pair("client_id", options.callback.getClientId()),
                     pair("refresh_token", refreshToken),
@@ -194,6 +207,11 @@ public class OAuth {
             case "invalid_grant":
                 if (response.errorDescription.contains("AADSTS70000")) {
                     throw new CredentialExpiredException();
+                }
+                break;
+            case "unauthorized_client":
+                if (response.errorDescription.contains("AADSTS700016")) {
+                    throw new OAuthClientUnauthorizedException(response.errorDescription);
                 }
                 break;
         }
@@ -357,5 +375,14 @@ public class OAuth {
 
         @SerializedName("refresh_token")
         String refreshToken;
+    }
+
+    public static class OAuthClientNotConfiguredException extends AuthenticationException {
+    }
+
+    public static class OAuthClientUnauthorizedException extends AuthenticationException {
+        public OAuthClientUnauthorizedException(String rawDescription) {
+            super(rawDescription);
+        }
     }
 }

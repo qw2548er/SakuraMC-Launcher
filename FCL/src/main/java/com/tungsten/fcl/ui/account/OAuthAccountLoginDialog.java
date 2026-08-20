@@ -78,6 +78,17 @@ public class OAuthAccountLoginDialog extends FCLDialog implements View.OnClickLi
     @Override
     public void onClick(View view) {
         if (view == positive) {
+            if (account instanceof com.tungsten.fclcore.auth.microsoft.MicrosoftAccount
+                    && !OAuthServer.Factory.isClientIdConfigured()) {
+                FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(getContext());
+                builder.setAlertLevel(FCLAlertDialog.AlertLevel.ALERT);
+                builder.setMessage(getContext().getString(R.string.account_methods_microsoft_error_client_not_configured));
+                builder.setCancelable(false);
+                builder.setNegativeButton(getContext().getString(com.tungsten.fcllibrary.R.string.dialog_positive), null);
+                builder.useAutoLink();
+                builder.create().show();
+                return;
+            }
             positive.setEnabled(false);
             negative.setEnabled(false);
             Task.supplyAsync(account::logInWhenCredentialsExpired)

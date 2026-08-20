@@ -86,6 +86,8 @@
     <string name="account_methods_microsoft_error_missing_xbox_account">Please confirm that you have purchased Minecraft: Java Edition. If you have, please click here ( https://www.minecraft.net/msaprofile/mygames/editprofile ) to create your game profile.</string>
     <string name="account_methods_microsoft_error_banned">Your account may have been banned by Xbox Live.\nYou can click on "Ban Query" above for more details.</string>
     <string name="account_methods_microsoft_error_unknown">Failed to log in</string>
+    <string name="account_methods_microsoft_error_client_not_configured">Microsoft login is not available in this build because the Azure AD app key (OAUTH_API_KEY) was not provided when compiling this package. Please contact the author to obtain a build with the key configured, or configure the OAUTH_API_KEY secret in the repository CI if you build it yourself.</string>
+    <string name="account_methods_microsoft_error_client_unauthorized">Microsoft rejected this launcher\'s client registration (AADSTS700016). This usually means the Azure AD App used for login was misconfigured (not multi-tenant enabled, missing platform redirect URIs, or never granted user consent). Contact the launcher author to reconfigure the Microsoft login key; this is not an issue with your account itself.</string>
     <string name="account_methods_microsoft_error_wrong_verify_method">Please log in using your account(like phone number) and password on the Microsoft account login page. Please do not use a verification code to log in.</string>
     <string name="account_methods_microsoft_error_no_license">No Minecraft purchase record found. Please click here ( https://www.xbox.com/games/store/minecraft-java-bedrock-edition-for-pc/9nxp44l49shj ) to get the game.\nIf you are using Game Pass, please create your game profile <a href="https://www.minecraft.net/msaprofile/mygames/editprofile">here</a>. If you have already purchased the game, please check if you are logged into the correct account.</string>
     <string name="account_methods_microsoft_error_no_character">You have not created a game profile yet. Please click here (https://www.minecraft.net/msaprofile/mygames/editprofile ) to create one.</string>
@@ -809,6 +811,22 @@
     <string name="mods_dependency_incompatible">incompatible mod (installing both the mod and the mod being downloaded will cause the game to fail to launch)</string>
     <string name="mods_dependency_broken">Broken pre-mod (This premod used to exist on the mod repository, but is now deleted.) Try a different download source.</string>
     <string name="mods_dependency_none_required">No required dependencies to download</string>
+    <string name="mods_one_click_plan_title">Confirm to download</string>
+    <string name="mods_one_click_plan_summary">To be downloaded: %1$d file(s), total size about %2$s</string>
+    <string name="mods_one_click_plan_item_mod">Mod itself: %1$s (%2$s)</string>
+    <string name="mods_one_click_plan_item_dep">Dependency: %1$s (%2$s)</string>
+    <string name="mods_one_click_plan_item_local_hit">Already installed locally (SHA1 match, skip download)</string>
+    <string name="mods_one_click_conflict_title">Mod version conflict detected</string>
+    <string name="mods_one_click_conflict_desc">Local directory already contains another version of mod \"%1$s\". Keeping both versions usually causes Class Conflict crash on game startup.\n\nInstalled: %2$s\nAbout to download: %3$s</string>
+    <string name="mods_one_click_conflict_action_remove">Remove old version and download (Recommended)</string>
+    <string name="mods_one_click_conflict_action_keep">Keep both (might crash)</string>
+    <string name="mods_one_click_failed_some">Some downloads failed (%1$d/%2$d)</string>
+    <string name="mods_one_click_retry_failed">Retry failed downloads only (%1$d file(s))</string>
+    <string name="mods_one_click_retry_all">Redownload all files</string>
+    <string name="mods_one_click_loader_mismatch_title">Version mismatch with current environment</string>
+    <string name="mods_one_click_loader_mismatch_desc">Mod version \"%1$s\" declares: game versions %2$s, loaders %3$s.\nCurrent environment: game version %4$s, loaders %5$s.\nContinuing may cause the mod not to load, or crash the game.</string>
+    <string name="mods_one_click_loader_mismatch_continue">Download anyway</string>
+    <string name="mods_check_updates_extra_deps_ok">Also auto-installed the following new required dependencies for the updated mods:</string>
     <string name="mods_disable">Disable</string>
     <string name="mods_download">Mod Download</string>
     <string name="mods_download_title">Mod Download - %1s</string>

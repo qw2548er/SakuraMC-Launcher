@@ -53,6 +53,7 @@ import com.tungsten.fclcore.auth.AccountFactory;
 import com.tungsten.fclcore.auth.AuthenticationException;
 import com.tungsten.fclcore.auth.CharacterDeletedException;
 import com.tungsten.fclcore.auth.NoCharacterException;
+import com.tungsten.fclcore.auth.OAuth;
 import com.tungsten.fclcore.auth.OAuthAccount;
 import com.tungsten.fclcore.auth.ServerDisconnectException;
 import com.tungsten.fclcore.auth.ServerResponseMalformedException;
@@ -468,6 +469,8 @@ public final class Accounts {
                     return context.getString(R.string.account_failed_invalid_token);
                 } else if (remoteMessage.contains("Invalid username or password")) {
                     return context.getString(R.string.account_failed_invalid_password);
+                } else if ("unauthorized_client".equals(remoteException.getRemoteName()) && remoteMessage.contains("AADSTS700016")) {
+                    return context.getString(R.string.account_methods_microsoft_error_client_unauthorized);
                 } else {
                     return remoteMessage;
                 }
@@ -479,6 +482,10 @@ public final class Accounts {
                 }
             }
             return exception.getMessage();
+        } else if (exception instanceof OAuth.OAuthClientNotConfiguredException) {
+            return context.getString(R.string.account_methods_microsoft_error_client_not_configured);
+        } else if (exception instanceof OAuth.OAuthClientUnauthorizedException) {
+            return context.getString(R.string.account_methods_microsoft_error_client_unauthorized);
         } else if (exception instanceof AuthlibInjectorDownloadException) {
             return context.getString(R.string.account_failed_injector_download_failure);
         } else if (exception instanceof CharacterDeletedException) {

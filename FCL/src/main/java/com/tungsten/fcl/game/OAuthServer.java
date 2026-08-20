@@ -126,6 +126,13 @@ public final class OAuthServer extends NanoHTTPD implements OAuth.Session {
         public final EventManager<GrantDeviceCodeEvent> onGrantDeviceCode = new EventManager<>();
         public final EventManager<OpenBrowserEvent> onOpenBrowser = new EventManager<>();
 
+        public static boolean isClientIdConfigured() {
+            String clientId = FCLPath.CONTEXT.getString(R.string.oauth_api_key);
+            return clientId != null
+                    && !clientId.trim().isEmpty()
+                    && !"null".equalsIgnoreCase(clientId.trim());
+        }
+
         @Override
         public OAuth.Session startServer() throws IOException, AuthenticationException {
             if (StringUtils.isBlank(getClientId()) || getClientId().equals("null")) {
