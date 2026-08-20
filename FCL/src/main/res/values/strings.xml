@@ -1294,7 +1294,6 @@
     <string name="library_picker_action_sort_name">Sort by name</string>
     <string name="library_picker_action_minimal">Minimal</string>
     <string name="library_picker_help_minimal">Minimal = 只保留启动必需的核心库（仅 MUST）；音效/中文显示/网络等可选功能可能不可用。</string>
-    <string name="help">Help</string>
 
     <!-- 设置项：启动前显示依赖选择 -->
     <string name="setting_show_library_picker_title">Show library picker before launch</string>

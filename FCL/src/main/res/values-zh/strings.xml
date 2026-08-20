@@ -1208,7 +1208,6 @@
     <string name="library_picker_action_sort_name">按名称排序</string>
     <string name="library_picker_action_minimal">一键精简</string>
     <string name="library_picker_help_minimal">一键精简 = 仅保留 MUST 核心库。可能导致音效/中文/网络等推荐功能不可用。</string>
-    <string name="help">帮助</string>
 
     <!-- 设置项：启动前显示依赖选择 -->
     <string name="setting_show_library_picker_title">启动前显示依赖选择</string>
