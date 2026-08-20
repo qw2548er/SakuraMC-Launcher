@@ -6,7 +6,7 @@ import android.content.ContextWrapper;
 import android.content.SharedPreferences;
 
 import com.tungsten.fcl.R;
-import com.tungsten.fcl.core.FCLPath;
+import com.tungsten.fclauncher.utils.FCLPath;
 import com.tungsten.fclcore.download.DefaultDependencyManager;
 import com.tungsten.fclcore.download.game.LibraryClassifier;
 import com.tungsten.fclcore.download.game.LibrarySelectionStore;
@@ -18,11 +18,11 @@ import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.task.TaskListener;
 import com.tungsten.fclcore.util.Lang;
-import com.tungsten.fcl.core.FCLApplication;
+import com.tungsten.fcl.FCLApplication;
+import com.tungsten.fcl.ui.TaskDialog;
 import com.tungsten.fcl.ui.download.common.LibraryPickerDialog;
+import com.tungsten.fcl.util.TaskCancellationAction;
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog;
-import com.tungsten.fcllibrary.component.dialog.TaskDialog;
-import com.tungsten.fcllibrary.component.dialog.TaskCancellationAction;
 
 import java.io.File;
 import java.io.IOException;
