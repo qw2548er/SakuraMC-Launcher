@@ -50,7 +50,7 @@
         android:minWidth="0dp"
         android:text="@string/library_picker_action_sort_size"
         app:layout_constraintBaseline_toBaselineOf="@+id/search_edit"
-        app:layout_constraintEnd_toStartOf="@+id/btn_minimal"/>
+        app:layout_constraintEnd_toStartOf="@+id/btn_minimal_row"/>
 
     <androidx.appcompat.widget.LinearLayoutCompat
         android:id="@+id/btn_minimal_row"
