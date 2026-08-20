@@ -210,7 +210,7 @@ public class LibrarySectionedAdapter extends RecyclerView.Adapter<RecyclerView.V
             displayItems.clear();
             displayItems.addAll(flatItems);
         } else {
-            filter.getFilter().filter(lastConstraint);
+            filter.filter(lastConstraint);
             return;
         }
         notifyDataSetChanged();

@@ -299,11 +299,11 @@ public class LibraryPickerDialog extends FCLDialog implements View.OnClickListen
         });
         btnMinimal.setOnClickListener(v -> {
             FCLAlertDialog.Builder b = new FCLAlertDialog.Builder(getContext());
-            b.setAlertLevel(FCLAlertDialog.AlertLevel.WARNING);
+            b.setAlertLevel(FCLAlertDialog.AlertLevel.ALERT);
             b.setCancelable(false);
             b.setTitle(getContext().getString(R.string.library_picker_action_minimal));
             b.setMessage(getContext().getString(R.string.library_picker_help_minimal));
-            b.setPositiveButton(getContext().getString(R.string.mod_check_continue), () -> {
+            b.setPositiveButton(getContext().getString(R.string.mod_check_continue), (FCLAlertDialog.ButtonListener) () -> {
                 adapter.applyMinimalSelection();
                 updateSummary();
             });

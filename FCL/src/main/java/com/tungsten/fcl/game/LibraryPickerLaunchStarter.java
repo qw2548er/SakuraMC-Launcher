@@ -19,6 +19,8 @@ import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.task.TaskListener;
 import com.tungsten.fclcore.util.Lang;
 import com.tungsten.fcl.FCLApplication;
+import com.tungsten.fcl.game.FCLGameRepository;
+import com.tungsten.fcl.setting.VersionSetting;
 import com.tungsten.fcl.ui.TaskDialog;
 import com.tungsten.fcl.ui.download.common.LibraryPickerDialog;
 import com.tungsten.fcl.util.TaskCancellationAction;
@@ -38,7 +40,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 
-import static com.tungsten.fcl.game.LauncherHelper.LOG;
+import static com.tungsten.fclcore.util.Logging.LOG;
 
 /**
  * 把「依赖选择 + 后续启动」从 {@link LauncherHelper#launch0()} 抽出来的独立辅助类。

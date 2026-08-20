@@ -80,6 +80,7 @@ import com.tungsten.fclcore.task.Schedulers;
 import com.tungsten.fclcore.task.Task;
 import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.task.TaskListener;
+import com.tungsten.fclcore.util.LibFilter;
 import com.tungsten.fclcore.util.io.FileUtils;
 import com.tungsten.fclcore.util.io.ResponseCodeException;
 import com.tungsten.fclcore.util.versioning.GameVersionNumber;

@@ -162,7 +162,7 @@ public class ModVersionAdapter extends FCLAdapter {
                         currentGame,
                         currentLoader))
                 .setCancelable(false)
-                .setPositiveButton(getContext().getString(R.string.mods_one_click_loader_mismatch_continue), onContinue)
+                .setPositiveButton(getContext().getString(R.string.mods_one_click_loader_mismatch_continue), (FCLAlertDialog.ButtonListener) onContinue::run)
                 .setNegativeButton(null)
                 .create()
                 .show();
@@ -250,8 +250,8 @@ public class ModVersionAdapter extends FCLAdapter {
                 .setTitle(getContext().getString(R.string.mods_one_click_conflict_title))
                 .setMessage(sb.toString())
                 .setCancelable(false)
-                .setPositiveButton(getContext().getString(R.string.mods_one_click_conflict_action_remove), onRemoveOldAndContinue)
-                .setNegativeButton(getContext().getString(R.string.mods_one_click_conflict_action_keep), () -> actuallyExecutePlan(PlanResult.ofFiltered(conflicts.plan, item -> true), null, false))
+                .setPositiveButton(getContext().getString(R.string.mods_one_click_conflict_action_remove), (FCLAlertDialog.ButtonListener) onRemoveOldAndContinue::run)
+                .setNegativeButton(getContext().getString(R.string.mods_one_click_conflict_action_keep), (FCLAlertDialog.ButtonListener) () -> actuallyExecutePlan(PlanResult.ofFiltered(conflicts.plan, item -> true), null, false))
                 .create()
                 .show();
     }
@@ -304,7 +304,7 @@ public class ModVersionAdapter extends FCLAdapter {
         Schedulers.androidUIThread().execute(() -> {
             final String[] failed = new String[1];
             AtomicInteger failedCount = new AtomicInteger(0);
-            TaskExecutor executor = Task.allOf(tasks)
+            TaskExecutor executor = Task.allOf(tasks.toArray(new Task<?>[0]))
                     .whenComplete(Schedulers.androidUIThread(), (v, exception) -> {
                         if (exception != null) {
                             if (exception instanceof CancellationException) {
@@ -493,7 +493,7 @@ public class ModVersionAdapter extends FCLAdapter {
                 task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
                 task.setName(v.getName());
             }
-            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getId(), dest, task, false, v.getFile()));
+            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getModID(), dest, task, false, v.getFile()));
             downloadedIds.add(dependencyId);
             List<RemoteMod.Dependency> nested = v.getDependencies();
             if (nested != null && !nested.isEmpty()) {
@@ -528,12 +528,12 @@ public class ModVersionAdapter extends FCLAdapter {
             if (item.localHit) continue;
             if (StringUtils.isBlank(item.modId)) continue;
             for (LocalModFile installed : localMods) {
-                LocalModFile.LocalMod local = installed.getLocalMod();
+                LocalMod local = installed.getMod();
                 if (local == null) continue;
                 String id = local.getId();
                 if (!item.modId.equalsIgnoreCase(id)) continue;
                 // Skip if target path equals the installed path (same file overwrite — safe)
-                if (installed.getFile() != null && item.dest != null && installed.getFile().toPath().equals(item.dest)) {
+                if (installed.getFile() != null && item.dest != null && installed.getFile().equals(item.dest)) {
                     continue;
                 }
                 conflicts.add(new ConflictItem(item.modId, installed, item.displayName + " @ " + item.dest.getFileName()));
@@ -654,9 +654,6 @@ public class ModVersionAdapter extends FCLAdapter {
                 case QUILT:
                     stringBuilder.append("   ").append(context.getString(R.string.install_installer_quilt));
                     break;
-                case NEO_FORGE:
-                    stringBuilder.append("   ").append(context.getString(R.string.install_installer_neoforge));
-                    break;
                 case CLEANROOM:
                     stringBuilder.append("   ").append(context.getString(R.string.install_installer_cleanroom));
                     break;
@@ -672,7 +669,7 @@ public class ModVersionAdapter extends FCLAdapter {
         void onItemSelect(RemoteMod.Version version);
     }
 
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter
+    public static final DateTimeFormatter FORMATTER = DateTimeFormatter
             .ofLocalizedDateTime(FormatStyle.MEDIUM)
             .withLocale(Locale.getDefault())
             .withZone(ZoneId.systemDefault());
