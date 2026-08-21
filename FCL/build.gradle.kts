@@ -45,8 +45,8 @@ android {
         applicationId = "com.tungsten.maoning"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1325
-        versionName = "1.4.5"
+        versionCode = 1326
+        versionName = "1.4.6"
     }
 
     buildTypes {

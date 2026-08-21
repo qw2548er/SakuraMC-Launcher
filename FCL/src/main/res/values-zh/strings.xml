@@ -785,7 +785,7 @@
     <string name="mods_one_click_loader_mismatch_cancel">取消下载</string>
     <string name="mods_one_click_unmatched_reason_no_version">当前游戏版本 / 加载器组合下没有合适版本</string>
     <string name="mods_one_click_unmatched_reason_exception">解析失败：%1$s</string>
-    <string name="mods_one_click_relation_banner">已扫描 %1$d 个依赖（MC 版本 %2$s）：命中同版本 %3$s 个 · 未命中 %4$s 个（可点击项查看原因）</string>
+    <string name="mods_one_click_relation_banner">递归扫描（MC 版本 %2$s）：总命中 %3$s 个 · 未命中 %4$s 个\n扫描过 %1$s 个模组节点 · 重复合并 %6$s 个 · 最深到第 %5$s 层</string>
     <string name="mods_one_click_matched_badge">✅ 游戏版本 %1$s · %2$s 精准匹配</string>
     <string name="mods_one_click_loose_badge">⚠️ 游戏版本 %1$s · %2$s 宽松匹配</string>
     <string name="mods_one_click_unmatched_badge">❌ MC %1$s 下未找到对应版本</string>

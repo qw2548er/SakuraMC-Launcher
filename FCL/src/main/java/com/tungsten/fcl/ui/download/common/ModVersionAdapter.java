@@ -263,9 +263,10 @@ public class ModVersionAdapter extends FCLAdapter {
         FCLTextView banner = new FCLTextView(getContext());
         banner.setTextSize(12);
         banner.setText(getContext().getString(R.string.mods_one_click_relation_banner,
-                plan.rawDependencyDeclaredCount,
+                plan.scannedNodeCount,
                 StringUtils.isBlank(plan.gameVersion) ? "(unknown)" : plan.gameVersion,
-                plan.matchedCount, plan.unmatchedCount));
+                plan.matchedCount, plan.unmatchedCount,
+                plan.maxDepthReached, plan.duplicatedNodeCount));
         banner.setLineSpacing(1.1f, 1.1f);
         root.addView(banner, new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -712,14 +713,21 @@ public class ModVersionAdapter extends FCLAdapter {
                 : profile.getRepository().getBaseDirectory().toPath();
         Path modsDir = runDirectory.resolve("mods");
 
+        // visitedAllIds = 所有真正"摸过"的依赖 id（不管是否成功、是否命中）。用来统计"扫描了多少节点" + 避免树枝循环 & 重复。
+        Set<String> visitedAllIds = new HashSet<>();
         Set<String> downloadedIds = new HashSet<>();
         List<PlanItem> items = new ArrayList<>();
         List<UnresolvedDependency> unresolved = Collections.synchronizedList(new ArrayList<>());
         int[] looseMatchedCounter = new int[1];
+        int[] scannedNodeCounter = new int[1];
+        int[] duplicatedCounter = new int[1];
+        int[] maxDepthReached = new int[1];
 
         if (currentVersion != null) {
             String pseudoId = (currentVersion.getModid() == null ? "__current__" : currentVersion.getModid())
                     + ":" + (currentVersion.getVersion() == null ? "" : currentVersion.getVersion());
+            scannedNodeCounter[0]++;
+            visitedAllIds.add(pseudoId);
             if (!downloadedIds.contains(pseudoId)) {
                 try {
                     Path dest = modsDir.resolve(currentVersion.getFile().getFilename());
@@ -746,7 +754,8 @@ public class ModVersionAdapter extends FCLAdapter {
 
         for (RemoteMod.Dependency dependency : dependencies) {
             planDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir,
-                    downloadedIds, items, unresolved, looseMatchedCounter, 0);
+                    visitedAllIds, scannedNodeCounter, duplicatedCounter, maxDepthReached,
+                    downloadedIds, items, unresolved, looseMatchedCounter, 1);
         }
 
         long totalBytesEstimate = 0L;
@@ -761,16 +770,28 @@ public class ModVersionAdapter extends FCLAdapter {
         }
         for (UnresolvedDependency u : unresolved) unmatchedCount++;
         return new PlanResult(items, downloadingCount, totalBytesEstimate, currentGameVersion, currentLoaders, modsDir,
-                unresolved, looseMatchedCounter[0], matchedCount, unmatchedCount, dependencies.size());
+                unresolved, looseMatchedCounter[0], matchedCount, unmatchedCount, dependencies.size(),
+                scannedNodeCounter[0], duplicatedCounter[0], maxDepthReached[0]);
     }
 
     private void planDependencyRecursively(RemoteMod.Dependency dependency, String currentGameVersion,
                                            Set<ModLoaderType> currentLoaders, Path modsDir,
+                                           Set<String> visitedAllIds, int[] scannedNodeCounter, int[] duplicatedCounter,
+                                           int[] maxDepthReached,
                                            Set<String> downloadedIds, List<PlanItem> items,
                                            List<UnresolvedDependency> unresolved,
                                            int[] looseMatchedCounter, int depth) {
-        // 递归深度保险（避免超深嵌套把 Modrinth API 打爆 / 卡死），放到 8 层支持更长依赖链
-        if (depth > 8) return;
+        // 不设深度上限（树枝插到底为止），但维护「当前递归栈」防止同一路径出现循环依赖导致死递归
+        String dependencyId = dependency.getId();
+
+        // 统计 + 去重：同一 dependencyId 在任何一层都只真正"处理一次"（树枝重复合并）
+        if (visitedAllIds.contains(dependencyId)) {
+            duplicatedCounter[0]++;
+            return;
+        }
+        visitedAllIds.add(dependencyId);
+        scannedNodeCounter[0]++;
+        if (depth > maxDepthReached[0]) maxDepthReached[0] = depth;
 
         // 依赖类型：REQUIRED / TOOL 默认强制勾选且锁定；OPTIONAL 默认勾选但允许取消；其他一律不参与自动下载
         RemoteMod.DependencyType type = dependency.getType();
@@ -836,10 +857,12 @@ public class ModVersionAdapter extends FCLAdapter {
             List<RemoteMod.Dependency> nested = v.getDependencies();
             if (nested != null && !nested.isEmpty()) {
                 for (RemoteMod.Dependency child : nested) {
-                    if (child.getType() == RemoteMod.DependencyType.REQUIRED
-                            || child.getType() == RemoteMod.DependencyType.TOOL
-                            || child.getType() == RemoteMod.DependencyType.OPTIONAL) {
+                    if (child.getType() != RemoteMod.DependencyType.INCOMPATIBLE
+                            && child.getType() != RemoteMod.DependencyType.BROKEN
+                            && child.getType() != RemoteMod.DependencyType.INCLUDE
+                            && child.getType() != RemoteMod.DependencyType.EMBEDDED) {
                         planDependencyRecursively(child, currentGameVersion, currentLoaders, modsDir,
+                                visitedAllIds, scannedNodeCounter, duplicatedCounter, maxDepthReached,
                                 downloadedIds, items, unresolved, looseMatchedCounter, depth + 1);
                     }
                 }
@@ -1156,16 +1179,27 @@ public class ModVersionAdapter extends FCLAdapter {
         final int matchedCount;
         final int unmatchedCount;
         final int rawDependencyDeclaredCount;
+        final int scannedNodeCount;
+        final int duplicatedNodeCount;
+        final int maxDepthReached;
 
         PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
                    List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount) {
             this(items, downloadingCount, totalBytesEstimate, gameVersion, loaders, modsDir, unresolvedDependencies, looseMatchedCount,
-                    0, 0, 0);
+                    0, 0, 0, 0, 0, 0);
         }
 
         PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
                    List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount,
                    int matchedCount, int unmatchedCount, int rawDependencyDeclaredCount) {
+            this(items, downloadingCount, totalBytesEstimate, gameVersion, loaders, modsDir, unresolvedDependencies, looseMatchedCount,
+                    matchedCount, unmatchedCount, rawDependencyDeclaredCount, 0, 0, 0);
+        }
+
+        PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
+                   List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount,
+                   int matchedCount, int unmatchedCount, int rawDependencyDeclaredCount,
+                   int scannedNodeCount, int duplicatedNodeCount, int maxDepthReached) {
             this.items = items;
             this.downloadingCount = downloadingCount;
             this.totalBytesEstimate = totalBytesEstimate;
@@ -1177,6 +1211,9 @@ public class ModVersionAdapter extends FCLAdapter {
             this.matchedCount = matchedCount;
             this.unmatchedCount = unmatchedCount;
             this.rawDependencyDeclaredCount = rawDependencyDeclaredCount;
+            this.scannedNodeCount = scannedNodeCount;
+            this.duplicatedNodeCount = duplicatedNodeCount;
+            this.maxDepthReached = maxDepthReached;
         }
 
         static PlanResult ofFiltered(PlanResult origin, java.util.function.Predicate<PlanItem> keep) {
@@ -1195,7 +1232,8 @@ public class ModVersionAdapter extends FCLAdapter {
             }
             if (origin.unresolvedDependencies != null) unmatched += origin.unresolvedDependencies.size();
             return new PlanResult(kept, down, total, origin.gameVersion, origin.loaders, origin.modsDir,
-                    origin.unresolvedDependencies, origin.looseMatchedCount, matched, unmatched, origin.rawDependencyDeclaredCount);
+                    origin.unresolvedDependencies, origin.looseMatchedCount, matched, unmatched, origin.rawDependencyDeclaredCount,
+                    origin.scannedNodeCount, origin.duplicatedNodeCount, origin.maxDepthReached);
         }
     }
 
