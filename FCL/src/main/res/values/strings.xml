@@ -823,6 +823,15 @@
     <string name="mods_one_click_failed_some">Some downloads failed (%1$d/%2$d)</string>
     <string name="mods_one_click_retry_failed">Retry failed downloads only (%1$d file(s))</string>
     <string name="mods_one_click_retry_all">Redownload all files</string>
+    <string name="mods_one_click_retry_skip">Skip these (do not prompt again this time)</string>
+    <string name="mods_one_click_retry_skip_ok">Skipped %1$d failed file(s) — you won\'t be bugged about them again on this page</string>
+    <string name="mods_one_click_retry_all_skipped">All downloads were skipped by you — no more pop-ups</string>
+    <string name="mods_one_click_loader_mismatch_cancel">Cancel download</string>
+    <string name="mods_one_click_plan_loose_matched">%1$d dependencies were picked with loose game-version matching (may be incompatible — please test)</string>
+    <string name="mods_one_click_plan_item_loose_match">⚠️ loose game-version match</string>
+    <string name="mods_one_click_plan_unresolved">Ignored %1$d dependencies for this attempt:%2$s</string>
+    <string name="mods_one_click_unmatched_reason_no_version">No suitable version found for the current game version / loader combination</string>
+    <string name="mods_one_click_unmatched_reason_exception">Resolving failed: %1$s</string>
     <string name="mods_one_click_loader_mismatch_title">Version mismatch with current environment</string>
     <string name="mods_one_click_loader_mismatch_desc">Mod version \"%1$s\" declares: game versions %2$s, loaders %3$s.\nCurrent environment: game version %4$s, loaders %5$s.\nContinuing may cause the mod not to load, or crash the game.</string>
     <string name="mods_one_click_loader_mismatch_continue">Download anyway</string>

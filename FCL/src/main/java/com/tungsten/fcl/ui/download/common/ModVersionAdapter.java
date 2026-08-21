@@ -51,9 +51,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
@@ -63,6 +65,13 @@ public class ModVersionAdapter extends FCLAdapter {
 
     private final List<RemoteMod.Version> list;
     private final Callback callback;
+
+    /**
+     * 用户明确选择"跳过 / 不再提示"的下载项主键集合。
+     * 用于避免失败弹窗"追着用户跑"：一旦某个失败项被加入到这里，
+     * 在当前 Adapter 生命周期内，它不会再被算进失败重试对话中。
+     */
+    private final Set<String> permanentlyDismissedKeys = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public ModVersionAdapter(Context context, List<RemoteMod.Version> list, Callback callback) {
         super(context);
@@ -162,9 +171,11 @@ public class ModVersionAdapter extends FCLAdapter {
                         declaredLoaders,
                         currentGame,
                         currentLoader))
-                .setCancelable(false)
+                .setCancelable(true)
                 .setPositiveButton(getContext().getString(R.string.mods_one_click_loader_mismatch_continue), (FCLAlertDialog.ButtonListener) onContinue::run)
-                .setNegativeButton(null)
+                .setNegativeButton(getContext().getString(R.string.mods_one_click_loader_mismatch_cancel), (FCLAlertDialog.ButtonListener) () -> {
+                    Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
+                })
                 .create()
                 .show();
     }
@@ -187,6 +198,7 @@ public class ModVersionAdapter extends FCLAdapter {
                             return;
                         }
                         holder[0] = plan;
+                        showPlanDiagnosticIfNeeded(plan);
                         if (plan.items.isEmpty()) {
                             Toast.makeText(getContext(), getContext().getString(R.string.mods_dependency_none_required), Toast.LENGTH_SHORT).show();
                             return;
@@ -199,10 +211,32 @@ public class ModVersionAdapter extends FCLAdapter {
         });
     }
 
+    private void showPlanDiagnosticIfNeeded(PlanResult plan) {
+        if (plan.unresolvedDependencies == null || plan.unresolvedDependencies.isEmpty()) return;
+        StringBuilder sb = new StringBuilder();
+        int cap = Math.min(plan.unresolvedDependencies.size(), 5);
+        for (int i = 0; i < cap; i++) {
+            UnresolvedDependency ud = plan.unresolvedDependencies.get(i);
+            sb.append("• ").append(ud.displayName);
+            if (ud.reason != null) sb.append("（").append(ud.reason).append("）");
+            sb.append("\n");
+        }
+        if (plan.unresolvedDependencies.size() > cap) {
+            sb.append("... (").append(plan.unresolvedDependencies.size() - cap).append(" more)");
+        }
+        Toast.makeText(getContext(),
+                getContext().getString(R.string.mods_one_click_plan_unresolved, plan.unresolvedDependencies.size(), sb.toString()),
+                Toast.LENGTH_LONG).show();
+    }
+
     private void showPlanDialog(PlanResult plan, RemoteMod.Version version) {
         StringBuilder sb = new StringBuilder();
         sb.append(getContext().getString(R.string.mods_one_click_plan_summary,
                 plan.downloadingCount, formatSize(plan.totalBytesEstimate)));
+        if (plan.looseMatchedCount > 0) {
+            sb.append("\n")
+                    .append(getContext().getString(R.string.mods_one_click_plan_loose_matched, plan.looseMatchedCount));
+        }
         sb.append("\n\n");
         for (PlanItem item : plan.items) {
             if (item.isModItself) {
@@ -211,6 +245,9 @@ public class ModVersionAdapter extends FCLAdapter {
             } else {
                 sb.append("• ")
                         .append(getContext().getString(R.string.mods_one_click_plan_item_dep, item.displayName, formatSize(item.sizeBytes)));
+                if (item.looseMatched) {
+                    sb.append(" — ").append(getContext().getString(R.string.mods_one_click_plan_item_loose_match));
+                }
             }
             if (item.localHit) {
                 sb.append(" — ").append(getContext().getString(R.string.mods_one_click_plan_item_local_hit));
@@ -221,8 +258,8 @@ public class ModVersionAdapter extends FCLAdapter {
                 .setAlertLevel(FCLAlertDialog.AlertLevel.INFO)
                 .setTitle(getContext().getString(R.string.mods_one_click_plan_title))
                 .setMessage(sb.toString())
-                .setCancelable(false)
-                .setPositiveButton(getContext().getString(R.string.button_download), () -> {
+                .setCancelable(true)
+                .setPositiveButton(getContext().getString(R.string.button_download), (FCLAlertDialog.ButtonListener) () -> {
                     ConflictCheckResult conflicts = findConflicts(plan);
                     if (conflicts.hasConflict()) {
                         showConflictDialog(conflicts, () -> actuallyExecutePlan(plan, version, true));
@@ -230,7 +267,9 @@ public class ModVersionAdapter extends FCLAdapter {
                         actuallyExecutePlan(plan, version, false);
                     }
                 })
-                .setNegativeButton(null)
+                .setNegativeButton(getContext().getString(R.string.button_cancel), (FCLAlertDialog.ButtonListener) () -> {
+                    Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
+                })
                 .create()
                 .show();
     }
@@ -250,9 +289,12 @@ public class ModVersionAdapter extends FCLAdapter {
                 .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
                 .setTitle(getContext().getString(R.string.mods_one_click_conflict_title))
                 .setMessage(sb.toString())
-                .setCancelable(false)
+                .setCancelable(true)
                 .setPositiveButton(getContext().getString(R.string.mods_one_click_conflict_action_remove), (FCLAlertDialog.ButtonListener) onRemoveOldAndContinue::run)
                 .setNegativeButton(getContext().getString(R.string.mods_one_click_conflict_action_keep), (FCLAlertDialog.ButtonListener) () -> actuallyExecutePlan(PlanResult.ofFiltered(conflicts.plan, item -> true), null, false))
+                .setNeutralButton(getContext().getString(R.string.button_cancel), (FCLAlertDialog.ButtonListener) () -> {
+                    Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
+                })
                 .create()
                 .show();
     }
@@ -297,13 +339,22 @@ public class ModVersionAdapter extends FCLAdapter {
     }
 
     private void runExecute(List<PlanItem> items, Set<String> alreadyRetriedFailedNames, RemoteMod.Version version) {
-        List<FileDownloadTask> tasks = items.stream()
+        // 先过滤掉用户明确选择"跳过本次 / 不再提示"的失败项，避免被反复纠缠
+        List<PlanItem> filteredItems = items.stream()
+                .filter(it -> !permanentlyDismissedKeys.contains(it.id))
+                .collect(Collectors.toList());
+        if (filteredItems.isEmpty()) {
+            Toast.makeText(getContext(), getContext().getString(R.string.mods_one_click_retry_all_skipped), Toast.LENGTH_SHORT).show();
+            refreshModList();
+            return;
+        }
+
+        List<FileDownloadTask> tasks = filteredItems.stream()
                 .map(it -> it.task)
                 .collect(Collectors.toList());
         TaskDialog taskDialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
         taskDialog.setTitle(getContext().getString(R.string.message_downloading));
         Schedulers.androidUIThread().execute(() -> {
-            final String[] failed = new String[1];
             AtomicInteger failedCount = new AtomicInteger(0);
             TaskExecutor executor = Task.allOf(tasks.toArray(new Task<?>[0]))
                     .whenComplete(Schedulers.androidUIThread(), (v, exception) -> {
@@ -317,8 +368,8 @@ public class ModVersionAdapter extends FCLAdapter {
                         int actualFailed = 0;
                         List<String> failedNames = new ArrayList<>();
                         List<PlanItem> failedItems = new ArrayList<>();
-                        for (int i = 0; i < items.size(); i++) {
-                            PlanItem pi = items.get(i);
+                        for (int i = 0; i < filteredItems.size(); i++) {
+                            PlanItem pi = filteredItems.get(i);
                             FileDownloadTask t = tasks.get(i);
                             if (t != null && t.getException() != null) {
                                 actualFailed++;
@@ -332,7 +383,7 @@ public class ModVersionAdapter extends FCLAdapter {
                             refreshModList();
                             return;
                         }
-                        int total = items.size();
+                        int total = filteredItems.size();
                         List<String> toRetryNames = new ArrayList<>();
                         List<PlanItem> retryItems = new ArrayList<>();
                         Set<String> newRetriedSet = new HashSet<>(alreadyRetriedFailedNames);
@@ -354,12 +405,15 @@ public class ModVersionAdapter extends FCLAdapter {
                         }
                         final int finalActualFailed = actualFailed;
                         final List<PlanItem> finalRetryItems = retryItems;
+                        final Set<String> finalFailedKeys = failedItems.stream()
+                                .map(fi -> fi.id)
+                                .collect(Collectors.toCollection(LinkedHashSet::new));
                         new FCLAlertDialog.Builder(getContext())
                                 .setAlertLevel(FCLAlertDialog.AlertLevel.ALERT)
                                 .setTitle(getContext().getString(R.string.install_failed))
                                 .setMessage(msg.toString())
-                                .setCancelable(false)
-                                .setPositiveButton(getContext().getString(R.string.mods_one_click_retry_failed, finalActualFailed), () -> {
+                                .setCancelable(true)
+                                .setPositiveButton(getContext().getString(R.string.mods_one_click_retry_failed, finalActualFailed), (FCLAlertDialog.ButtonListener) () -> {
                                     if (finalRetryItems.isEmpty()) {
                                         Toast.makeText(getContext(), getContext().getString(R.string.message_cancelled), Toast.LENGTH_SHORT).show();
                                         return;
@@ -367,10 +421,14 @@ public class ModVersionAdapter extends FCLAdapter {
                                     newRetriedSet.addAll(failedItems.stream().map(i -> i.id).collect(Collectors.toSet()));
                                     runExecute(finalRetryItems, newRetriedSet, version);
                                 })
-                                .setNegativeButton(getContext().getString(R.string.mods_one_click_retry_all), () -> {
+                                .setNegativeButton(getContext().getString(R.string.mods_one_click_retry_all), (FCLAlertDialog.ButtonListener) () -> {
                                     Set<String> empty = new HashSet<>();
-                                    List<PlanItem> fresh = items.stream().map(this::recreateItem).collect(Collectors.toList());
+                                    List<PlanItem> fresh = filteredItems.stream().map(this::recreateItem).collect(Collectors.toList());
                                     runExecute(fresh, empty, version);
+                                })
+                                .setNeutralButton(getContext().getString(R.string.mods_one_click_retry_skip), (FCLAlertDialog.ButtonListener) () -> {
+                                    permanentlyDismissedKeys.addAll(finalFailedKeys);
+                                    Toast.makeText(getContext(), getContext().getString(R.string.mods_one_click_retry_skip_ok, finalFailedKeys.size()), Toast.LENGTH_SHORT).show();
                                 })
                                 .create()
                                 .show();
@@ -385,7 +443,6 @@ public class ModVersionAdapter extends FCLAdapter {
         FileDownloadTask newTask = null;
         if (!origin.localHit) {
             try {
-                // Rebuild task using the metadata already stored in PlanItem, avoiding non-existent getters.
                 RemoteMod.File remoteFile = origin.remoteFileSnapshot;
                 if (remoteFile != null) {
                     newTask = new FileDownloadTask(
@@ -396,11 +453,11 @@ public class ModVersionAdapter extends FCLAdapter {
                 }
             } catch (Throwable thr) {
                 Logging.LOG.log(Level.WARNING, "重建下载任务失败: " + origin.displayName, thr);
-                newTask = origin.task; // fallback — might be executed once more; acceptable
+                newTask = origin.task;
             }
         }
         return new PlanItem(origin.id, origin.displayName, origin.sizeBytes, origin.localHit,
-                origin.modId, origin.dest, newTask, origin.isModItself, origin.remoteFileSnapshot);
+                origin.modId, origin.dest, newTask, origin.isModItself, origin.remoteFileSnapshot, origin.looseMatched);
     }
 
     private PlanResult buildPlan(RemoteMod.Version currentVersion) throws IOException {
@@ -428,6 +485,8 @@ public class ModVersionAdapter extends FCLAdapter {
 
         Set<String> downloadedIds = new HashSet<>();
         List<PlanItem> items = new ArrayList<>();
+        List<UnresolvedDependency> unresolved = Collections.synchronizedList(new ArrayList<>());
+        int[] looseMatchedCounter = new int[1];
 
         if (currentVersion != null) {
             String pseudoId = (currentVersion.getModid() == null ? "__current__" : currentVersion.getModid())
@@ -435,7 +494,7 @@ public class ModVersionAdapter extends FCLAdapter {
             if (!downloadedIds.contains(pseudoId)) {
                 try {
                     Path dest = modsDir.resolve(currentVersion.getFile().getFilename());
-                    long size = 0L; // RemoteMod.File does not expose size, keep as 0 (displayed as "?")
+                    long size = 0L;
                     boolean hit = isLocalFileValid(dest, currentVersion.getFile().getIntegrityCheck());
                     FileDownloadTask task = null;
                     if (!hit) {
@@ -445,22 +504,19 @@ public class ModVersionAdapter extends FCLAdapter {
                                 currentVersion.getFile().getIntegrityCheck());
                         task.setName(currentVersion.getName());
                     }
-                    items.add(new PlanItem(pseudoId, currentVersion.getName(), size, hit, currentVersion.getModid(), dest, task, true, currentVersion.getFile()));
+                    items.add(new PlanItem(pseudoId, currentVersion.getName(), size, hit, currentVersion.getModid(), dest, task, true, currentVersion.getFile(), false));
                     downloadedIds.add(pseudoId);
-                    List<RemoteMod.Dependency> nested = currentVersion.getDependencies();
-                    if (nested != null && !nested.isEmpty()) {
-                        for (RemoteMod.Dependency d : nested) {
-                            planDependencyRecursively(d, currentGameVersion, currentLoaders, modsDir, downloadedIds, items, 1);
-                        }
-                    }
                 } catch (Throwable t) {
                     Logging.LOG.log(Level.WARNING, "规划模组本体失败: " + currentVersion.getName(), t);
+                    unresolved.add(new UnresolvedDependency(currentVersion.getName() == null ? "(mod itself)" : currentVersion.getName(),
+                            getContext().getString(R.string.mods_one_click_unmatched_reason_exception, String.valueOf(t.getMessage()))));
                 }
             }
         }
 
         for (RemoteMod.Dependency dependency : dependencies) {
-            planDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir, downloadedIds, items, 0);
+            planDependencyRecursively(dependency, currentGameVersion, currentLoaders, modsDir,
+                    downloadedIds, items, unresolved, looseMatchedCounter, 0);
         }
 
         long totalBytesEstimate = 0L;
@@ -469,44 +525,66 @@ public class ModVersionAdapter extends FCLAdapter {
             totalBytesEstimate += it.sizeBytes;
             if (!it.localHit) downloadingCount++;
         }
-        return new PlanResult(items, downloadingCount, totalBytesEstimate, currentGameVersion, currentLoaders, modsDir);
+        return new PlanResult(items, downloadingCount, totalBytesEstimate, currentGameVersion, currentLoaders, modsDir,
+                unresolved, looseMatchedCounter[0]);
     }
 
     private void planDependencyRecursively(RemoteMod.Dependency dependency, String currentGameVersion,
                                            Set<ModLoaderType> currentLoaders, Path modsDir,
-                                           Set<String> downloadedIds, List<PlanItem> items, int depth) {
+                                           Set<String> downloadedIds, List<PlanItem> items,
+                                           List<UnresolvedDependency> unresolved,
+                                           int[] looseMatchedCounter, int depth) {
+        // 递归深度保险（避免超深嵌套把 Modrinth API 打爆 / 卡死）
+        if (depth > 6) return;
+
+        // 仅处理 REQUIRED / TOOL 两种类型（与 ModUpdatesPage.resolveDependencyRecursively 保持一致）
+        if (dependency.getType() != RemoteMod.DependencyType.REQUIRED
+                && dependency.getType() != RemoteMod.DependencyType.TOOL) {
+            return;
+        }
+
         String dependencyId = dependency.getId();
         if (downloadedIds.contains(dependencyId)) return;
+
+        // 注意：失败项绝对不要再写入 downloadedIds，否则会污染后续"兄弟姐妹依赖"，
+        // 直接导致"明明有很多依赖，但只下一个"的 bug。
         try {
             RemoteMod mod = dependency.load();
-            Optional<RemoteMod.Version> bestVersion = selectBestDependencyVersion(
+            VersionSelection selection = selectBestDependencyVersion(
                     mod, currentGameVersion, currentLoaders, dependency.getRemoteModRepository());
-            if (bestVersion.isEmpty()) {
-                downloadedIds.add(dependencyId);
+            if (selection == null || selection.version.isEmpty()) {
+                String display = mod.getTitle() == null ? dependencyId : mod.getTitle();
+                unresolved.add(new UnresolvedDependency(display,
+                        getContext().getString(R.string.mods_one_click_unmatched_reason_no_version)));
+                downloadedIds.add(dependencyId); // 未找到合适版本 → 标记避免重复查询
                 return;
             }
-            RemoteMod.Version v = bestVersion.get();
+            RemoteMod.Version v = selection.version.get();
             Path dest = modsDir.resolve(v.getFile().getFilename());
-            long size = 0L; // RemoteMod.File does not expose size
+            long size = 0L;
             boolean hit = isLocalFileValid(dest, v.getFile().getIntegrityCheck());
             FileDownloadTask task = null;
             if (!hit) {
                 task = new FileDownloadTask(NetworkUtils.toURL(v.getFile().getUrl()), dest.toFile(), v.getFile().getIntegrityCheck());
                 task.setName(v.getName());
             }
-            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getModID(), dest, task, false, v.getFile()));
+            boolean isLoose = !selection.strict;
+            if (isLoose) looseMatchedCounter[0]++;
+            items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getModID(), dest, task, false, v.getFile(), isLoose));
             downloadedIds.add(dependencyId);
+
             List<RemoteMod.Dependency> nested = v.getDependencies();
             if (nested != null && !nested.isEmpty()) {
                 for (RemoteMod.Dependency child : nested) {
-                    if (child.getType() == RemoteMod.DependencyType.REQUIRED || child.getType() == RemoteMod.DependencyType.TOOL) {
-                        planDependencyRecursively(child, currentGameVersion, currentLoaders, modsDir, downloadedIds, items, depth + 1);
-                    }
+                    planDependencyRecursively(child, currentGameVersion, currentLoaders, modsDir,
+                            downloadedIds, items, unresolved, looseMatchedCounter, depth + 1);
                 }
             }
         } catch (Throwable t) {
             Logging.LOG.log(Level.WARNING, "规划依赖失败: " + dependencyId, t);
-            downloadedIds.add(dependencyId);
+            // **不要**写入 downloadedIds，否则兄弟依赖会被牵连跳过；仅写入 unresolved 用于末尾诊断
+            unresolved.add(new UnresolvedDependency(dependencyId,
+                    getContext().getString(R.string.mods_one_click_unmatched_reason_exception, String.valueOf(t.getMessage()))));
         }
     }
 
@@ -533,7 +611,6 @@ public class ModVersionAdapter extends FCLAdapter {
                 if (local == null) continue;
                 String id = local.getId();
                 if (!item.modId.equalsIgnoreCase(id)) continue;
-                // Skip if target path equals the installed path (same file overwrite — safe)
                 if (installed.getFile() != null && item.dest != null && installed.getFile().equals(item.dest)) {
                     continue;
                 }
@@ -584,34 +661,70 @@ public class ModVersionAdapter extends FCLAdapter {
         }
     }
 
-    private Optional<RemoteMod.Version> selectBestDependencyVersion(
+    private static final class VersionSelection {
+        final Optional<RemoteMod.Version> version;
+        final boolean strict;
+
+        VersionSelection(Optional<RemoteMod.Version> version, boolean strict) {
+            this.version = version;
+            this.strict = strict;
+        }
+    }
+
+    private VersionSelection selectBestDependencyVersion(
             RemoteMod mod, String currentGameVersion, Set<ModLoaderType> currentLoaders,
             RemoteModRepository repository) throws IOException {
-        Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository);
-        List<RemoteMod.Version> allVersions = stream.collect(Collectors.toList());
+        try (Stream<RemoteMod.Version> stream = mod.getData().loadVersions(repository)) {
+            List<RemoteMod.Version> allVersions = stream.collect(Collectors.toList());
 
-        Logging.LOG.log(Level.INFO, "依赖 " + mod.getTitle() + " 共找到 " + allVersions.size() + " 个版本，开始严格匹配游戏版本: " + currentGameVersion);
+            Logging.LOG.log(Level.INFO, "依赖 " + mod.getTitle() + " 共找到 " + allVersions.size() + " 个版本，开始严格匹配游戏版本: " + currentGameVersion);
 
-        for (RemoteMod.Version v : allVersions) {
-            Logging.LOG.log(Level.FINE, "  候选版本: " + v.getName() + ", 支持游戏版本: " + v.getGameVersions() + ", 加载器: " + v.getLoaders());
+            // 1) 严格匹配
+            Optional<RemoteMod.Version> strict = filterAndSelect(allVersions, currentGameVersion, currentLoaders, true, false);
+            if (strict.isPresent()) {
+                Logging.LOG.log(Level.INFO, "依赖 " + mod.getTitle() + " 严格命中: " + strict.get().getName());
+                return new VersionSelection(strict, true);
+            }
+
+            // 2) 宽松游戏版本匹配（允许 1.21 ↔ 1.21.0 / 1.21.1 ↔ 1.21 前缀匹配）
+            Optional<RemoteMod.Version> looseGame = filterAndSelect(allVersions, currentGameVersion, currentLoaders, false, false);
+            if (looseGame.isPresent()) {
+                Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 未严格命中，使用宽松(前缀)游戏版本匹配: " + looseGame.get().getName());
+                return new VersionSelection(looseGame, false);
+            }
+
+            // 3) 仅匹配 ModLoader，游戏版本忽略（最宽松兜底，避免"只有一个依赖"的表象）
+            Optional<RemoteMod.Version> loaderOnly = filterAndSelect(allVersions, currentGameVersion, currentLoaders, false, true);
+            if (loaderOnly.isPresent()) {
+                Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 游戏版本全部不匹配，仅按 ModLoader 兜底选择: " + loaderOnly.get().getName());
+                return new VersionSelection(loaderOnly, false);
+            }
+
+            Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 无论如何都找不到可下载版本");
+            return new VersionSelection(Optional.empty(), false);
         }
-
-        Optional<RemoteMod.Version> result = filterAndSelect(allVersions, currentGameVersion, currentLoaders);
-
-        if (result.isEmpty()) {
-            Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 未找到与游戏版本 " + currentGameVersion + " 严格匹配的版本，跳过下载（避免下载不兼容版本）");
-        } else {
-            Logging.LOG.log(Level.INFO, "依赖 " + mod.getTitle() + " 选中版本: " + result.get().getName() + " (游戏版本: " + result.get().getGameVersions() + ")");
-        }
-
-        return result;
     }
 
     private Optional<RemoteMod.Version> filterAndSelect(
-            List<RemoteMod.Version> versions, String gameVersion, Set<ModLoaderType> loaders) {
+            List<RemoteMod.Version> versions, String gameVersion, Set<ModLoaderType> loaders,
+            boolean strictGameVersion, boolean ignoreGameVersion) {
         Stream<RemoteMod.Version> stream = versions.stream();
-        if (!StringUtils.isBlank(gameVersion)) {
-            stream = stream.filter(v -> v.getGameVersions() != null && v.getGameVersions().contains(gameVersion));
+        if (!ignoreGameVersion && !StringUtils.isBlank(gameVersion)) {
+            if (strictGameVersion) {
+                stream = stream.filter(v -> v.getGameVersions() != null && v.getGameVersions().contains(gameVersion));
+            } else {
+                String normalizedTarget = normalizeGameVersion(gameVersion);
+                stream = stream.filter(v -> {
+                    if (v.getGameVersions() == null || v.getGameVersions().isEmpty()) return false;
+                    for (String declared : v.getGameVersions()) {
+                        String normalizedDeclared = normalizeGameVersion(declared);
+                        if (normalizedDeclared.equals(normalizedTarget)) return true;
+                        if (normalizedDeclared.startsWith(normalizedTarget + ".")) return true;
+                        if (normalizedTarget.startsWith(normalizedDeclared + ".")) return true;
+                    }
+                    return false;
+                });
+            }
         }
         if (loaders != null && !loaders.isEmpty()) {
             stream = stream.filter(v -> {
@@ -624,7 +737,28 @@ public class ModVersionAdapter extends FCLAdapter {
                 return false;
             });
         }
-        return stream.max(Comparator.comparing(RemoteMod.Version::getDatePublished));
+        // Release 优先于 Alpha/Beta，其次按发布时间倒序
+        return stream
+                .sorted(Comparator.comparing((RemoteMod.Version v) -> {
+                    switch (v.getVersionType()) {
+                        case Release:
+                            return 0;
+                        case Beta:
+                            return 1;
+                        case Alpha:
+                            return 2;
+                        default:
+                            return 3;
+                    }
+                }).thenComparing(RemoteMod.Version::getDatePublished).reversed())
+                .findFirst();
+    }
+
+    private static String normalizeGameVersion(String v) {
+        if (v == null) return "";
+        String s = v.trim();
+        while (s.endsWith(".0")) s = s.substring(0, s.length() - 2);
+        return s;
     }
 
     public static String getTag(Context context, RemoteMod.Version version) {
@@ -677,6 +811,16 @@ public class ModVersionAdapter extends FCLAdapter {
 
     // === Small PODOs for plan flow ===
 
+    private static final class UnresolvedDependency {
+        final String displayName;
+        final String reason;
+
+        UnresolvedDependency(String displayName, String reason) {
+            this.displayName = displayName;
+            this.reason = reason;
+        }
+    }
+
     private static class PlanItem {
         final String id;
         final String displayName;
@@ -687,8 +831,13 @@ public class ModVersionAdapter extends FCLAdapter {
         final FileDownloadTask task;
         final boolean isModItself;
         final RemoteMod.File remoteFileSnapshot;
+        final boolean looseMatched;
 
         PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot) {
+            this(id, displayName, sizeBytes, localHit, modId, dest, task, isModItself, remoteFileSnapshot, false);
+        }
+
+        PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot, boolean looseMatched) {
             this.id = id;
             this.displayName = displayName;
             this.sizeBytes = sizeBytes;
@@ -698,6 +847,7 @@ public class ModVersionAdapter extends FCLAdapter {
             this.task = task;
             this.isModItself = isModItself;
             this.remoteFileSnapshot = remoteFileSnapshot;
+            this.looseMatched = looseMatched;
         }
     }
 
@@ -708,14 +858,19 @@ public class ModVersionAdapter extends FCLAdapter {
         final String gameVersion;
         final Set<ModLoaderType> loaders;
         final Path modsDir;
+        final List<UnresolvedDependency> unresolvedDependencies;
+        final int looseMatchedCount;
 
-        PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir) {
+        PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
+                   List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount) {
             this.items = items;
             this.downloadingCount = downloadingCount;
             this.totalBytesEstimate = totalBytesEstimate;
             this.gameVersion = gameVersion;
             this.loaders = loaders;
             this.modsDir = modsDir;
+            this.unresolvedDependencies = unresolvedDependencies;
+            this.looseMatchedCount = looseMatchedCount;
         }
 
         static PlanResult ofFiltered(PlanResult origin, java.util.function.Predicate<PlanItem> keep) {
@@ -726,7 +881,8 @@ public class ModVersionAdapter extends FCLAdapter {
                 if (!it.localHit) down++;
                 total += it.sizeBytes;
             }
-            return new PlanResult(kept, down, total, origin.gameVersion, origin.loaders, origin.modsDir);
+            return new PlanResult(kept, down, total, origin.gameVersion, origin.loaders, origin.modsDir,
+                    origin.unresolvedDependencies, origin.looseMatchedCount);
         }
     }
 
@@ -742,7 +898,7 @@ public class ModVersionAdapter extends FCLAdapter {
         }
     }
 
-    private static class ConflictCheckResult {
+    private static final class ConflictCheckResult {
         final PlanResult plan;
         final List<ConflictItem> conflicts;
 
@@ -752,7 +908,7 @@ public class ModVersionAdapter extends FCLAdapter {
         }
 
         boolean hasConflict() {
-            return !conflicts.isEmpty();
+            return conflicts != null && !conflicts.isEmpty();
         }
     }
 }
