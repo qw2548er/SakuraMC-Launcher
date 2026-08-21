@@ -835,11 +835,12 @@
     <string name="mods_one_click_loader_mismatch_title">Version mismatch with current environment</string>
     <string name="mods_one_click_loader_mismatch_desc">Mod version \"%1$s\" declares: game versions %2$s, loaders %3$s.\nCurrent environment: game version %4$s, loaders %5$s.\nContinuing may cause the mod not to load, or crash the game.</string>
     <string name="mods_one_click_loader_mismatch_continue">Download anyway</string>
-    <string name="mods_one_click_relation_banner">Recursive scan (MC %2$s): %3$s matched · %4$s unmatched\n%1$s mod-nodes scanned · %6$s deduplicated · deepest depth %5$s</string>
+    <string name="mods_one_click_relation_banner">Recursive scan (MC %2$s): %3$s strict/loose matched · %7$s detail-page fallback · %4$s unmatched\n%1$s mod-nodes scanned · %6$s deduplicated · deepest depth %5$s</string>
     <string name="mods_one_click_matched_badge">✅ MC %1$s · %2$s</string>
     <string name="mods_one_click_loose_badge">⚠️ MC %1$s · %2$s (loose match)</string>
     <string name="mods_one_click_unmatched_badge">❌ Not found for MC %1$s</string>
     <string name="mods_one_click_mod_itself_badge">Mod itself</string>
+    <string name="mods_one_click_detail_page_fallback_badge">🔍 Detail-page scan fallback (MC %1$s not declared in %2$s, manual confirm needed)</string>
     <string name="mods_one_click_btn_only_required">Download required only</string>
     <string name="mods_one_click_btn_confirm_download">Confirm &amp; download</string>
     <string name="mods_one_click_unmatched_section">Unmatched deps (will not be auto-downloaded):</string>

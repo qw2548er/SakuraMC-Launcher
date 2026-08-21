@@ -785,11 +785,12 @@
     <string name="mods_one_click_loader_mismatch_cancel">取消下载</string>
     <string name="mods_one_click_unmatched_reason_no_version">当前游戏版本 / 加载器组合下没有合适版本</string>
     <string name="mods_one_click_unmatched_reason_exception">解析失败：%1$s</string>
-    <string name="mods_one_click_relation_banner">递归扫描（MC 版本 %2$s）：总命中 %3$s 个 · 未命中 %4$s 个\n扫描过 %1$s 个模组节点 · 重复合并 %6$s 个 · 最深到第 %5$s 层</string>
+    <string name="mods_one_click_relation_banner">递归扫描（MC 版本 %2$s）：严格/宽松命中 %3$s 个 · 详情页兜底候选 %7$s 个 · 未命中 %4$s 个\n扫描过 %1$s 个模组节点 · 重复合并 %6$s 个 · 最深到第 %5$s 层</string>
     <string name="mods_one_click_matched_badge">✅ 游戏版本 %1$s · %2$s 精准匹配</string>
     <string name="mods_one_click_loose_badge">⚠️ 游戏版本 %1$s · %2$s 宽松匹配</string>
     <string name="mods_one_click_unmatched_badge">❌ MC %1$s 下未找到对应版本</string>
     <string name="mods_one_click_mod_itself_badge">模组本体</string>
+    <string name="mods_one_click_detail_page_fallback_badge">🔍 详情页兜底扫描（MC %1$s 未声明 %2$s 兼容，由您自行确认）</string>
     <string name="mods_one_click_btn_only_required">仅下载必需</string>
     <string name="mods_one_click_btn_confirm_download">确认无误开始下载</string>
     <string name="mods_one_click_unmatched_section">未命中关联的依赖（不会自动下载）：</string>

@@ -266,7 +266,7 @@ public class ModVersionAdapter extends FCLAdapter {
                 plan.scannedNodeCount,
                 StringUtils.isBlank(plan.gameVersion) ? "(unknown)" : plan.gameVersion,
                 plan.matchedCount, plan.unmatchedCount,
-                plan.maxDepthReached, plan.duplicatedNodeCount));
+                plan.maxDepthReached, plan.duplicatedNodeCount, plan.detailPageFallbackCount));
         banner.setLineSpacing(1.1f, 1.1f);
         root.addView(banner, new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -350,6 +350,10 @@ public class ModVersionAdapter extends FCLAdapter {
                         getContext().getString(R.string.mods_one_click_matched_badge,
                                 version.getGameVersions() == null ? "-" : version.getGameVersions().toString(),
                                 version.getLoaders() == null ? "-" : version.getLoaders().toString()));
+            } else if (item.isDetailPageFallback) {
+                sub.append(getContext().getString(R.string.mods_one_click_detail_page_fallback_badge,
+                        StringUtils.isBlank(item.targetGameVersion) ? "-" : item.targetGameVersion,
+                        StringUtils.isBlank(item.loaderBadge) ? "-" : item.loaderBadge));
             } else {
                 if (item.looseMatched) {
                     sub.append(getContext().getString(R.string.mods_one_click_loose_badge,
@@ -829,13 +833,18 @@ public class ModVersionAdapter extends FCLAdapter {
                 task.setName(v.getName());
             }
             // 若"完全忽略游戏版本、只按 ModLoader 选出"的候选 → 不再默认勾选，且允许用户自由勾选/取消（不再锁定）
-            boolean looseBySelection = !selection.strict;
+            boolean looseBySelection = !selection.strict && !selection.isDetailPageFallback;
             if (looseBySelection) looseMatchedCounter[0]++;
             boolean gameVersionIgnored = selection.isIgnoringGameVersion;
+            boolean isDetailFallback = selection.isDetailPageFallback;
 
             boolean defaultChecked;
             boolean lockedCheck;
-            if (gameVersionIgnored) {
+            if (isDetailFallback) {
+                // 详情页兜底扫描的候选：**绝不**自动勾，让用户自行确认兼容性（等于用户点进详情页、看到版本、自己决定要不要下）
+                defaultChecked = false;
+                lockedCheck = false;
+            } else if (gameVersionIgnored) {
                 // 游戏版本完全不匹配：不强推默认选中，交给用户自行决定
                 defaultChecked = false;
                 lockedCheck = false;
@@ -850,7 +859,8 @@ public class ModVersionAdapter extends FCLAdapter {
             String loaderBadge = v.getLoaders() == null ? "-" : v.getLoaders().stream()
                     .map(Object::toString).collect(Collectors.joining(","));
             items.add(new PlanItem(dependencyId, v.getName(), size, hit, mod.getModID(), dest, task, false, v.getFile(),
-                    looseBySelection, type, defaultChecked, lockedCheck, targetGameVersion, loaderBadge, !gameVersionIgnored));
+                    looseBySelection, type, defaultChecked, lockedCheck, targetGameVersion, loaderBadge,
+                    !(gameVersionIgnored || isDetailFallback), isDetailFallback));
             downloadedIds.add(dependencyId);
 
             List<RemoteMod.Dependency> nested = v.getDependencies();
@@ -954,11 +964,18 @@ public class ModVersionAdapter extends FCLAdapter {
         final Optional<RemoteMod.Version> version;
         final boolean strict;
         final boolean isIgnoringGameVersion;
+        final boolean isDetailPageFallback;
 
         VersionSelection(Optional<RemoteMod.Version> version, boolean strict, boolean isIgnoringGameVersion) {
+            this(version, strict, isIgnoringGameVersion, false);
+        }
+
+        VersionSelection(Optional<RemoteMod.Version> version, boolean strict, boolean isIgnoringGameVersion,
+                         boolean isDetailPageFallback) {
             this.version = version;
             this.strict = strict;
             this.isIgnoringGameVersion = isIgnoringGameVersion;
+            this.isDetailPageFallback = isDetailPageFallback;
         }
     }
 
@@ -985,13 +1002,13 @@ public class ModVersionAdapter extends FCLAdapter {
                 return new VersionSelection(looseGame, false, false);
             }
 
-            // 3) 绝不自动走"完全忽略游戏版本只按 ModLoader 兜底"分支（用户反馈会下错模组版本，不再自动选）
-            //    但为了让用户在清单里能看见候选，把"完全忽略游戏版本"的结果也返回出来——但标记 isIgnoringGameVersion=true，
-            //    由 buildPlan 决定是否把它作为"未命中关联的依赖"加入「未命中 Section」还是给个兜底候选并标「⚠️ 未命中关联，强行兜底」。
-            Optional<RemoteMod.Version> loaderOnly = filterAndSelect(allVersions, currentGameVersion, currentLoaders, false, true);
-            if (loaderOnly.isPresent()) {
-                Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 完全未命中当前游戏版本，返回 ModLoader 兜底候选供清单确认阶段用户手动决策（不自动勾选）");
-                return new VersionSelection(loaderOnly, false, true);
+            // 3) 模仿用户「点进依赖链接 → 打开详情页 → 从详情页所有版本列表中手动挑」的做法：
+            //    忽略游戏版本声明（完全按 ModLoader + 发布日期排序），把详情页里用户肉眼就能看到的第一个可加载器匹配版本拿出来
+            //    —— 这就等于"模拟点击详情页逐个扫"。即使 gameVersions 字段没写 26.2，只要这个 mod 详情页里有加载器对的版本，就不会被算成未命中。
+            Optional<RemoteMod.Version> detailPageFallback = filterAndSelect(allVersions, currentGameVersion, currentLoaders, false, true);
+            if (detailPageFallback.isPresent()) {
+                Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 在游戏版本声明层面未命中，启动「模拟点击详情页」兜底：从该 Mod 详情页所有版本中挑出加载器匹配的最新版本作为候选 = " + detailPageFallback.get().getName() + "（不自动勾选，完全交由用户）");
+                return new VersionSelection(detailPageFallback, false, true, true);
             }
 
             Logging.LOG.log(Level.WARNING, "依赖 " + mod.getTitle() + " 在当前 MC 版本和 ModLoader 组合下没有任何可下载版本");
@@ -1135,6 +1152,7 @@ public class ModVersionAdapter extends FCLAdapter {
         final String targetGameVersion;
         final String loaderBadge;
         final boolean isMatched;
+        final boolean isDetailPageFallback;
 
         PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot) {
             this(id, displayName, sizeBytes, localHit, modId, dest, task, isModItself, remoteFileSnapshot, false);
@@ -1142,11 +1160,18 @@ public class ModVersionAdapter extends FCLAdapter {
 
         PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot, boolean looseMatched) {
             this(id, displayName, sizeBytes, localHit, modId, dest, task, isModItself, remoteFileSnapshot, looseMatched,
-                    RemoteMod.DependencyType.REQUIRED, true, true, null, null, true);
+                    RemoteMod.DependencyType.REQUIRED, true, true, null, null, true, false);
         }
 
         PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot, boolean looseMatched,
                  RemoteMod.DependencyType dependencyType, boolean defaultChecked, boolean lockedCheck, String targetGameVersion, String loaderBadge, boolean isMatched) {
+            this(id, displayName, sizeBytes, localHit, modId, dest, task, isModItself, remoteFileSnapshot, looseMatched,
+                    dependencyType, defaultChecked, lockedCheck, targetGameVersion, loaderBadge, isMatched, false);
+        }
+
+        PlanItem(String id, String displayName, long sizeBytes, boolean localHit, String modId, Path dest, FileDownloadTask task, boolean isModItself, RemoteMod.File remoteFileSnapshot, boolean looseMatched,
+                 RemoteMod.DependencyType dependencyType, boolean defaultChecked, boolean lockedCheck, String targetGameVersion, String loaderBadge, boolean isMatched,
+                 boolean isDetailPageFallback) {
             this.id = id;
             this.displayName = displayName;
             this.sizeBytes = sizeBytes;
@@ -1163,6 +1188,7 @@ public class ModVersionAdapter extends FCLAdapter {
             this.targetGameVersion = targetGameVersion;
             this.loaderBadge = loaderBadge;
             this.isMatched = isMatched;
+            this.isDetailPageFallback = isDetailPageFallback;
         }
     }
 
@@ -1181,24 +1207,35 @@ public class ModVersionAdapter extends FCLAdapter {
         final int scannedNodeCount;
         final int duplicatedNodeCount;
         final int maxDepthReached;
+        final int detailPageFallbackCount;
 
         PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
                    List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount) {
             this(items, downloadingCount, totalBytesEstimate, gameVersion, loaders, modsDir, unresolvedDependencies, looseMatchedCount,
-                    0, 0, 0, 0, 0, 0);
+                    0, 0, 0, 0, 0, 0, 0);
         }
 
         PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
                    List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount,
                    int matchedCount, int unmatchedCount, int rawDependencyDeclaredCount) {
             this(items, downloadingCount, totalBytesEstimate, gameVersion, loaders, modsDir, unresolvedDependencies, looseMatchedCount,
-                    matchedCount, unmatchedCount, rawDependencyDeclaredCount, 0, 0, 0);
+                    matchedCount, unmatchedCount, rawDependencyDeclaredCount, 0, 0, 0, 0);
         }
 
         PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
                    List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount,
                    int matchedCount, int unmatchedCount, int rawDependencyDeclaredCount,
                    int scannedNodeCount, int duplicatedNodeCount, int maxDepthReached) {
+            this(items, downloadingCount, totalBytesEstimate, gameVersion, loaders, modsDir, unresolvedDependencies, looseMatchedCount,
+                    matchedCount, unmatchedCount, rawDependencyDeclaredCount,
+                    scannedNodeCount, duplicatedNodeCount, maxDepthReached,
+                    (int) items.stream().filter(it -> it.isDetailPageFallback).count());
+        }
+
+        PlanResult(List<PlanItem> items, int downloadingCount, long totalBytesEstimate, String gameVersion, Set<ModLoaderType> loaders, Path modsDir,
+                   List<UnresolvedDependency> unresolvedDependencies, int looseMatchedCount,
+                   int matchedCount, int unmatchedCount, int rawDependencyDeclaredCount,
+                   int scannedNodeCount, int duplicatedNodeCount, int maxDepthReached, int detailPageFallbackCount) {
             this.items = items;
             this.downloadingCount = downloadingCount;
             this.totalBytesEstimate = totalBytesEstimate;
@@ -1213,6 +1250,7 @@ public class ModVersionAdapter extends FCLAdapter {
             this.scannedNodeCount = scannedNodeCount;
             this.duplicatedNodeCount = duplicatedNodeCount;
             this.maxDepthReached = maxDepthReached;
+            this.detailPageFallbackCount = detailPageFallbackCount;
         }
 
         static PlanResult ofFiltered(PlanResult origin, java.util.function.Predicate<PlanItem> keep) {
@@ -1230,9 +1268,11 @@ public class ModVersionAdapter extends FCLAdapter {
                 else unmatched++;
             }
             if (origin.unresolvedDependencies != null) unmatched += origin.unresolvedDependencies.size();
+            int fallback = 0;
+            for (PlanItem it : kept) if (it.isDetailPageFallback) fallback++;
             return new PlanResult(kept, down, total, origin.gameVersion, origin.loaders, origin.modsDir,
                     origin.unresolvedDependencies, origin.looseMatchedCount, matched, unmatched, origin.rawDependencyDeclaredCount,
-                    origin.scannedNodeCount, origin.duplicatedNodeCount, origin.maxDepthReached);
+                    origin.scannedNodeCount, origin.duplicatedNodeCount, origin.maxDepthReached, fallback);
         }
     }
 
