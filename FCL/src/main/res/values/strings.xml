@@ -835,6 +835,14 @@
     <string name="mods_one_click_loader_mismatch_title">Version mismatch with current environment</string>
     <string name="mods_one_click_loader_mismatch_desc">Mod version \"%1$s\" declares: game versions %2$s, loaders %3$s.\nCurrent environment: game version %4$s, loaders %5$s.\nContinuing may cause the mod not to load, or crash the game.</string>
     <string name="mods_one_click_loader_mismatch_continue">Download anyway</string>
+    <string name="mods_one_click_relation_banner">Scanned %1$d deps for MC version %2$s — %3$s game-version matches, %4$s unmatched (click items for details)</string>
+    <string name="mods_one_click_matched_badge">✅ MC %1$s · %2$s</string>
+    <string name="mods_one_click_loose_badge">⚠️ MC %1$s · %2$s (loose match)</string>
+    <string name="mods_one_click_unmatched_badge">❌ Not found for MC %1$s</string>
+    <string name="mods_one_click_mod_itself_badge">Mod itself</string>
+    <string name="mods_one_click_btn_only_required">Download required only</string>
+    <string name="mods_one_click_btn_confirm_download">Confirm &amp; download</string>
+    <string name="mods_one_click_unmatched_section">Unmatched deps (will not be auto-downloaded):</string>
     <string name="mods_check_updates_extra_deps_ok">Also auto-installed the following new required dependencies for the updated mods:</string>
     <string name="mods_disable">Disable</string>
     <string name="mods_download">Mod Download</string>
