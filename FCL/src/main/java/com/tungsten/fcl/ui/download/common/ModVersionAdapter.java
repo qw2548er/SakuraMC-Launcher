@@ -801,7 +801,6 @@ public class ModVersionAdapter extends FCLAdapter {
             return;
         }
 
-        String dependencyId = dependency.getId();
         if (downloadedIds.contains(dependencyId)) return;
 
         // 注意：失败项绝对不要再写入 downloadedIds，否则会污染后续"兄弟姐妹依赖"，
